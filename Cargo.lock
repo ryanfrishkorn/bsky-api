@@ -416,6 +416,7 @@ dependencies = [
  "axum",
  "duckdb",
  "env_logger",
+ "log",
  "serde",
  "tokio",
  "tower",
