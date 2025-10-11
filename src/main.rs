@@ -54,6 +54,7 @@ async fn run_task(Path(process): Path<String>) -> impl IntoResponse {
     let mut task = match process.as_str() {
         "uname" => Task::new(Process::Uname),
         "date" => Task::new(Process::Date),
+        "count" => Task::new(Process::Count),
         _ => panic!("junk"),
     };
 
@@ -65,18 +66,24 @@ async fn run_task(Path(process): Path<String>) -> impl IntoResponse {
     for arg in task.args {
         cmd.arg(arg);
     }
-    let output = cmd.output().expect("could not get output");
-    let result: TaskResult = match cmd.status() {
-        Ok(_) => {
-            let s = String::from_utf8_lossy(&output.stdout).to_string();
-            TaskResult::Success(s)
-        }
-        Err(_) => {
-            let s = String::from_utf8_lossy(&output.stdout).to_string();
-            TaskResult::Fail(s)
-        }
-    };
-    info!("result: {:?}", result);
+    // spawn for blocking
+    let result = tokio::task::spawn_blocking(move || {
+        let output = cmd.output().expect("could not get output");
+        let result: TaskResult = match cmd.status() {
+            Ok(_) => {
+                let s = String::from_utf8_lossy(&output.stdout).to_string();
+                TaskResult::Success(s)
+            }
+            Err(_) => {
+                let s = String::from_utf8_lossy(&output.stdout).to_string();
+                TaskResult::Fail(s)
+            }
+        };
+        info!("result: {:?}", result);
+        result
+    })
+    .await
+    .expect("execution error");
 
     Json(result)
 }
