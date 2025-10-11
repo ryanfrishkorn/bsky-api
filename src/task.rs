@@ -12,19 +12,20 @@ pub struct Task {
 impl Task {
     pub fn new(process: Process) -> Task {
         match process {
-            // get system information
-            Process::Uname => {
-                let cmd = "uname".to_string();
-                let args = vec!["-a".to_string()];
-
-                Self {
-                    process,
-                    cmd,
-                    args,
-                    status: TaskStatus::Created,
-                    result: None,
-                }
-            }
+            Process::Date => Self {
+                process,
+                cmd: "uname".to_string(),
+                args: vec!["-snr".to_string()],
+                status: TaskStatus::Created,
+                result: None,
+            },
+            Process::Uname => Self {
+                process,
+                cmd: "date".to_string(),
+                args: vec![],
+                status: TaskStatus::Created,
+                result: None,
+            },
         }
     }
 }
@@ -46,6 +47,7 @@ pub enum TaskResult {
 
 #[derive(Clone, Debug, Serialize)]
 pub enum Process {
+    Date,
     Uname,
 }
 

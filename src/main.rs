@@ -1,5 +1,6 @@
 mod task;
 
+use axum::extract::Path;
 use axum::{Json, Router, response::IntoResponse, routing::get};
 use log::info;
 use std::process::Command;
@@ -27,7 +28,7 @@ async fn main() {
     info!("cors_layer: {:?}", cors_layer);
     let app = Router::new()
         .route("/", get(root))
-        .route("/task/uname", get(run_task))
+        .route("/task/{process}", get(run_task))
         .layer(ServiceBuilder::new().layer(cors_layer));
     let listener = tokio::net::TcpListener::bind(format!("{bind_address}:3000"))
         .await
@@ -49,8 +50,13 @@ async fn root() -> impl IntoResponse {
     Json(response)
 }
 
-async fn run_task() -> impl IntoResponse {
-    let mut task = Task::new(Process::Uname);
+async fn run_task(Path(process): Path<String>) -> impl IntoResponse {
+    let mut task = match process.as_str() {
+        "uname" => Task::new(Process::Uname),
+        "date" => Task::new(Process::Date),
+        _ => panic!("junk"),
+    };
+
     task.status = TaskStatus::Running;
 
     // spawn task
