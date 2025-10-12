@@ -1,13 +1,19 @@
 mod task;
 
 use axum::extract::Path;
-use axum::{Json, Router, response::IntoResponse, routing::get};
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use log::info;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use task::{Process, Task, TaskResult, TaskStatus};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
+
+#[derive(Clone, Debug)]
+struct AppState {
+    tasks: Arc<Mutex<usize>>,
+}
 
 #[derive(Debug, serde::Serialize)]
 struct JsonData {
@@ -17,6 +23,10 @@ struct JsonData {
 
 #[tokio::main]
 async fn main() {
+    let state = AppState {
+        tasks: Arc::new(Mutex::new(0)),
+    };
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .format_file(true)
@@ -29,6 +39,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/task/{process}", get(run_task))
+        .with_state(state)
         .layer(ServiceBuilder::new().layer(cors_layer));
     let listener = tokio::net::TcpListener::bind(format!("{bind_address}:3000"))
         .await
@@ -36,21 +47,23 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn root() -> impl IntoResponse {
+async fn root(State(state): State<AppState>) -> impl IntoResponse {
     let unix_ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs_f64();
+    let tasks_locked = state.tasks.lock().expect("locking AppState tasks");
     let response = JsonData {
         unix_ts,
-        msg: "message from api".to_string(),
+        msg: format!("tasks processed by api: {}", *tasks_locked),
     };
     info!("response: {:?}", response);
 
     Json(response)
 }
 
-async fn run_task(Path(process): Path<String>) -> impl IntoResponse {
+#[axum::debug_handler]
+async fn run_task(Path(process): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
     let mut task = match process.as_str() {
         "uname" => Task::new(Process::Uname),
         "date" => Task::new(Process::Date),
@@ -59,7 +72,6 @@ async fn run_task(Path(process): Path<String>) -> impl IntoResponse {
     };
 
     task.status = TaskStatus::Running;
-
     // spawn task
     info!("task: {:?}", task);
     let mut cmd = Command::new(task.cmd.clone());
@@ -84,6 +96,8 @@ async fn run_task(Path(process): Path<String>) -> impl IntoResponse {
     })
     .await
     .expect("execution error");
+    let mut tasks_locked = state.tasks.lock().expect("locking AppState tasks");
+    *tasks_locked += 1;
 
     Json(result)
 }
