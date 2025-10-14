@@ -3,6 +3,7 @@ mod task;
 use axum::extract::Path;
 use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use log::info;
+use serde::Serialize;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -10,9 +11,11 @@ use task::{Process, Task, TaskResult, TaskStatus};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 struct AppState {
+    #[serde(skip)]
     tasks: Arc<Mutex<usize>>,
+    start_time: std::time::SystemTime,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -25,6 +28,7 @@ struct JsonData {
 async fn main() {
     let state = AppState {
         tasks: Arc::new(Mutex::new(0)),
+        start_time: std::time::SystemTime::now(),
     };
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
@@ -38,6 +42,7 @@ async fn main() {
     info!("cors_layer: {:?}", cors_layer);
     let app = Router::new()
         .route("/", get(root))
+        .route("/state", get(api_state))
         .route("/task/{process}", get(run_task))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(cors_layer));
@@ -60,6 +65,10 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
     info!("response: {:?}", response);
 
     Json(response)
+}
+
+async fn api_state(State(state): State<AppState>) -> impl IntoResponse {
+    Json(state)
 }
 
 #[axum::debug_handler]
