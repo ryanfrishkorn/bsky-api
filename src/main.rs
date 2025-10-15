@@ -1,13 +1,17 @@
 mod task;
 
 use axum::extract::Path;
+use axum::response::sse::{Event, Sse};
 use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
+use futures::stream::Stream;
 use log::info;
 use serde::Serialize;
-use std::process::Command;
+use std::convert::Infallible;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use task::{Process, Task, TaskResult, TaskStatus};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -15,6 +19,9 @@ use tower_http::cors::{Any, CorsLayer};
 struct AppState {
     #[serde(skip)]
     tasks: Arc<Mutex<usize>>,
+    source_duckdb: bool,
+    source_sqlite: bool,
+    source_json: bool,
     start_time: std::time::SystemTime,
 }
 
@@ -28,6 +35,9 @@ struct JsonData {
 async fn main() {
     let state = AppState {
         tasks: Arc::new(Mutex::new(0)),
+        source_json: false,
+        source_sqlite: false,
+        source_duckdb: false,
         start_time: std::time::SystemTime::now(),
     };
 
@@ -44,6 +54,7 @@ async fn main() {
         .route("/", get(root))
         .route("/state", get(api_state))
         .route("/task/{process}", get(run_task))
+        .route("/task/{process}/stream", get(stream_task))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(cors_layer));
     let listener = tokio::net::TcpListener::bind(format!("{bind_address}:3000"))
@@ -67,7 +78,17 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
     Json(response)
 }
 
-async fn api_state(State(state): State<AppState>) -> impl IntoResponse {
+async fn file_exists(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    p.exists()
+}
+
+async fn api_state(State(mut state): State<AppState>) -> impl IntoResponse {
+    // search for database files
+    state.source_duckdb = file_exists("data/jetstream.duckdb").await;
+    state.source_json = file_exists("data/jetstream.json").await;
+    state.source_sqlite = file_exists("data/jetstream.sqlite3").await;
+
     Json(state)
 }
 
@@ -76,7 +97,7 @@ async fn run_task(Path(process): Path<String>, State(state): State<AppState>) ->
     let mut task = match process.as_str() {
         "uname" => Task::new(Process::Uname),
         "date" => Task::new(Process::Date),
-        "count" => Task::new(Process::Count),
+        "jetstream" => Task::new(Process::Jetstream),
         _ => panic!("junk"),
     };
 
@@ -109,4 +130,67 @@ async fn run_task(Path(process): Path<String>, State(state): State<AppState>) ->
     *tasks_locked += 1;
 
     Json(result)
+}
+
+#[axum::debug_handler]
+async fn stream_task(
+    Path(process): Path<String>,
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let task = match process.as_str() {
+        "build_duckdb" => Task::new(Process::BuildDuckDB),
+        "jetstream" => Task::new(Process::Jetstream),
+        "date" => Task::new(Process::Date),
+        "uname" => Task::new(Process::Uname),
+        _ => panic!("unknown process"),
+    };
+
+    info!("streaming task: {:?}", task);
+
+    // Create the stream
+    let stream = async_stream::stream! {
+        // Spawn the process with piped stdout
+        let mut cmd = tokio::process::Command::new(&task.cmd);
+        for arg in &task.args {
+            cmd.arg(arg);
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                yield Ok(Event::default().data(format!("Error spawning process: {}", e)));
+                return;
+            }
+        };
+
+        // Get stdout and create async line reader
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                info!("streaming line: {}", line);
+                yield Ok(Event::default().data(line));
+            }
+        }
+
+        // Wait for process to complete
+        match child.wait().await {
+            Ok(status) => {
+                info!("process completed with status: {:?}", status);
+                yield Ok(Event::default().data(format!("[DONE] Exit status: {}", status)));
+            }
+            Err(e) => {
+                yield Ok(Event::default().data(format!("[ERROR] Process error: {}", e)));
+            }
+        }
+
+        // Update task counter
+        let mut tasks_locked = state.tasks.lock().expect("locking AppState tasks");
+        *tasks_locked += 1;
+    };
+
+    Sse::new(stream)
 }

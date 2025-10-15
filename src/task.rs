@@ -12,10 +12,13 @@ pub struct Task {
 impl Task {
     pub fn new(process: Process) -> Task {
         match process {
-            Process::Count => Self {
+            Process::BuildDuckDB => Self {
                 process,
-                cmd: "./scripts/count".to_string(),
-                args: Vec::new(),
+                cmd: "./scripts/build-duckdb".to_string(),
+                args: ["data/jetstream.json", "data/jetstream.duckdb"]
+                    .iter_mut()
+                    .map(|x| x.to_string())
+                    .collect(),
                 status: TaskStatus::Created,
                 result: None,
             },
@@ -23,6 +26,21 @@ impl Task {
                 process,
                 cmd: "uname".to_string(),
                 args: vec!["-snr".to_string()],
+                status: TaskStatus::Created,
+                result: None,
+            },
+            Process::Jetstream => Self {
+                process,
+                cmd: "./bin/jetstream-client".to_string(),
+                args: [
+                    "--json",
+                    "data/jetstream.json",
+                    "--db",
+                    "data/jetstream.sqlite3",
+                ]
+                .iter_mut()
+                .map(|x| x.to_string())
+                .collect(),
                 status: TaskStatus::Created,
                 result: None,
             },
@@ -54,8 +72,9 @@ pub enum TaskResult {
 
 #[derive(Clone, Debug, Serialize)]
 pub enum Process {
-    Count,
+    BuildDuckDB,
     Date,
+    Jetstream,
     Uname,
 }
 

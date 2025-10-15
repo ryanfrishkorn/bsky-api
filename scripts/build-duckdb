@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+SCRIPT_NAME=$(basename "$0")
+
+usage() {
+    printf "%s <input.json> <output.duckdb>\n" "${SCRIPT_NAME}"
+    exit 1
+}
+
+require_bin() {
+    if which "${1}" >/dev/null; then
+        return 0
+    fi
+    printf "missing binary: %s\n" "${1}"
+    exit 1
+}
+
+require_file() {
+    # one argument only
+    if [[ $# != 1 ]]; then
+        printf "%s: supply a single file argument\n" "${0}"
+        exit 1
+    fi
+    
+    # check file existence
+    if [[ -f "${1}" ]]; then
+        return 0
+    fi
+    printf "file not found: %s\n" "${1}"
+    exit 1
+}
+
+require_no_file() {
+    if [[ -f "${1}" ]]; then
+        printf "file already exists: %s\n" "${1}"
+        exit 1
+    fi
+    return 0
+}
+
+import_json() {
+    local file_json
+    local file_duck
+
+    file_json=$1
+    file_duck=$2
+    require_no_file "${file_duck}"
+
+    # sample entire file before processing to avoid any unexpected fields
+    cmd=$(printf "create table posts as select * from read_json_auto('%s', sample_size = -1)" "${file_json}")
+    # printf "cmd: %s\n" "${cmd}"
+    duckdb "${file_duck}" "${cmd}" &>/dev/null
+    # duckdb "${file_duck}" "${cmd}"
+}
+
+fts_index() {
+    local file_duck
+    file_duck=$1
+
+    cmd=$(printf "pragma create_fts_index(posts, did, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 0)")
+    duckdb "${file_duck}" "${cmd}" &>/dev/null
+}
+
+# check for help args
+for arg in "$@"; do
+    if [[ "${arg}" == "--help" ]] || [[ "${arg}" == "-h" ]]; then
+        usage
+    fi
+done
+
+require_bin duckdb
+
+json_source=${1:-"${HOME}/.jetstream.json"}
+duckdb_dest=${2:-"${HOME}/.jetstream.duckdb"}
+
+require_file "${json_source}"
+
+# remove database before rebuild if present
+if [[ -f "${duckdb_dest}" ]]; then
+    rm "${duckdb_dest}"
+fi
+
+printf "importing %s to %s ... " "${json_source}" "${duckdb_dest}"
+if ! import_json "${json_source}" "${duckdb_dest}"; then
+    printf "error\n"
+    exit 1
+fi
+printf "ok\n"
+
+printf "implementing fts ... "
+if ! fts_index "${duckdb_dest}"; then
+    printf "error\n"
+    exit 1
+fi
+printf "ok\n"
