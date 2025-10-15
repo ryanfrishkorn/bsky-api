@@ -1,6 +1,6 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Task {
     pub process: Process, // for now
     pub cmd: String,
@@ -12,13 +12,20 @@ pub struct Task {
 impl Task {
     pub fn new(process: Process) -> Task {
         match process {
-            Process::BuildDuckDB => Self {
+            Process::BuildDuckDb => Self {
                 process,
                 cmd: "./scripts/build-duckdb".to_string(),
                 args: ["data/jetstream.json", "data/jetstream.duckdb"]
                     .iter_mut()
                     .map(|x| x.to_string())
                     .collect(),
+                status: TaskStatus::Created,
+                result: None,
+            },
+            Process::ClearData => Self {
+                process,
+                cmd: "./scripts/clear-data".to_string(),
+                args: vec![],
                 status: TaskStatus::Created,
                 result: None,
             },
@@ -56,7 +63,7 @@ impl Task {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TaskStatus {
     Created,
     Finished(TaskResult),
@@ -64,15 +71,17 @@ pub enum TaskStatus {
     Running,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TaskResult {
     Success(String),
     Fail(String), // exit status, msg
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Process {
-    BuildDuckDB,
+    BuildDuckDb,
+    ClearData,
     Date,
     Jetstream,
     Uname,

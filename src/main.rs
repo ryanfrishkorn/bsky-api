@@ -134,17 +134,10 @@ async fn run_task(Path(process): Path<String>, State(state): State<AppState>) ->
 
 #[axum::debug_handler]
 async fn stream_task(
-    Path(process): Path<String>,
+    Path(process): Path<Process>,
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let task = match process.as_str() {
-        "build_duckdb" => Task::new(Process::BuildDuckDB),
-        "jetstream" => Task::new(Process::Jetstream),
-        "date" => Task::new(Process::Date),
-        "uname" => Task::new(Process::Uname),
-        _ => panic!("unknown process"),
-    };
-
+    let task = Task::new(process);
     info!("streaming task: {:?}", task);
 
     // Create the stream

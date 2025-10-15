@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+declare -a files
+declare -a remove
+
+sleep_seconds=3
+
+files+=("data/jetstream.json")
+files+=("data/jetstream.sqlite3")
+files+=("data/jetstream.duckdb")
+
+# only remove files that are present
+for f in "${files[@]}"; do
+    if [[ -f "${f}" ]]; then
+        remove+=("${f}")
+    fi
+done
+
+printf "Removing %s files: %s\n\n" "${#remove[@]}" "${remove[*]}"
+
+printf "executing in ... \n"
+for i in $(seq $sleep_seconds -1 1); do
+    printf "%s\n" "${i}"
+    sleep 1
+done
+printf "\n\n"
+
+# delete files
+for f in "${remove[@]}"; do
+    printf "rm %s ... " "${f}"
+    if rm "${f}"; then
+        printf "ok\n"
+    else
+        printf "error\n"
+    fi
+done
