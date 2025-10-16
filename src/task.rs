@@ -15,10 +15,19 @@ impl Task {
             Process::BskyTrending => Self {
                 process,
                 cmd: "./bin/bsky-trending".to_string(),
-                args: vec!["--db", "data/jetstream.duckdb"]
-                    .iter_mut()
-                    .map(|x| x.to_string())
-                    .collect(),
+                args: vec![
+                    "--db",
+                    "data/jetstream.duckdb",
+                    "--limit",
+                    "500",
+                    "--min",
+                    "3",
+                    "--max",
+                    "4",
+                ]
+                .iter_mut()
+                .map(|x| x.to_string())
+                .collect(),
                 status: TaskStatus::Created,
                 result: None,
             },
