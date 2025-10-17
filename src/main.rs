@@ -3,9 +3,10 @@ mod task;
 use axum::extract::Path;
 use axum::response::sse::{Event, Sse};
 use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
+use duckdb::{Connection, params};
 use futures::stream::Stream;
 use log::info;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -17,6 +18,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone, Debug, Serialize)]
 struct AppState {
+    // #[serde(skip)]
+    // db: Option<Arc<Mutex<Connection>>>,
     #[serde(skip)]
     tasks: Arc<Mutex<usize>>,
     source_duckdb: bool,
@@ -34,6 +37,7 @@ struct JsonData {
 #[tokio::main]
 async fn main() {
     let state = AppState {
+        // db: None,
         tasks: Arc::new(Mutex::new(0)),
         source_json: false,
         source_sqlite: false,
@@ -55,6 +59,7 @@ async fn main() {
         .route("/state", get(api_state))
         .route("/task/{process}", get(run_task))
         .route("/task/{process}/stream", get(stream_task))
+        .route("/search/{term}", get(search))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(cors_layer));
     let listener = tokio::net::TcpListener::bind(format!("{bind_address}:3000"))
@@ -130,6 +135,37 @@ async fn run_task(Path(process): Path<String>, State(state): State<AppState>) ->
     *tasks_locked += 1;
 
     Json(result)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Post {
+    did: String,
+    text: String,
+}
+
+#[axum::debug_handler]
+async fn search(Path(term): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
+    let mut posts: Vec<Post> = Vec::new();
+    let db = Connection::open("data/jetstream.duckdb").expect("opening duckdb");
+    let mut stmt = db
+        .prepare("select did, text from posts where text ilike '%' || ? || '%'")
+        .expect("query");
+
+    let posts_iter = stmt
+        .query_map([term], |row| {
+            Ok(Post {
+                did: row.get(0)?,
+                text: row.get(1)?,
+            })
+        })
+        .unwrap();
+
+    for p in posts_iter {
+        if let Ok(good_post) = p {
+            posts.push(good_post);
+        }
+    }
+    Json(posts)
 }
 
 #[axum::debug_handler]
