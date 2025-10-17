@@ -140,22 +140,24 @@ async fn run_task(Path(process): Path<String>, State(state): State<AppState>) ->
 #[derive(Debug, Serialize, Deserialize)]
 struct Post {
     did: String,
+    created_at: String,
     text: String,
 }
 
 #[axum::debug_handler]
-async fn search(Path(term): Path<String>, State(state): State<AppState>) -> impl IntoResponse {
+async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> impl IntoResponse {
     let mut posts: Vec<Post> = Vec::new();
     let db = Connection::open("data/jetstream.duckdb").expect("opening duckdb");
     let mut stmt = db
-        .prepare("select did, text from posts where text ilike '%' || ? || '%'")
+        .prepare("select did, feedpost.createdAt, text from posts where text ilike '%' || ? || '%'")
         .expect("query");
 
     let posts_iter = stmt
         .query_map([term], |row| {
             Ok(Post {
                 did: row.get(0)?,
-                text: row.get(1)?,
+                created_at: row.get(1)?,
+                text: row.get(2)?,
             })
         })
         .unwrap();
