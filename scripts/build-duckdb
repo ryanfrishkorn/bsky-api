@@ -41,11 +41,38 @@ require_no_file() {
 import_json() {
     local file_json
     local file_duck
+    local partial_lines
+    declare -a args
 
-    file_json=$1
-    file_duck=$2
+    # parse options
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            "--partial")
+                shift
+                partial_lines=$1
+                shift
+                ;;
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    file_json="${args[0]}"
+    file_duck="${args[1]}"
     require_no_file "${file_duck}"
 
+    # partail import
+    if (( partial_lines > 0 )); then
+        file_json_partial="${file_json}.partial"
+
+        printf "reading last %s lines from %s ... " "${partial_lines}" "${file_json}"
+        if tail -n "${partial_lines}" "${file_json}" > "${file_json_partial}"; then
+            # use partial file
+            file_json="${file_json_partial}"
+        fi
+    fi
     # sample entire file before processing to avoid any unexpected fields
     cmd=$(printf "create table posts as select * from read_json_auto('%s', sample_size = -1)" "${file_json}")
     # printf "cmd: %s\n" "${cmd}"
@@ -68,10 +95,27 @@ for arg in "$@"; do
     fi
 done
 
+declare -a args
+partial_lines=0
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        "--partial")
+            shift
+            partial_lines=$1
+            shift
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
 require_bin duckdb
 
-json_source=${1:-"${HOME}/.jetstream.json"}
-duckdb_dest=${2:-"${HOME}/.jetstream.duckdb"}
+json_source=${args[0]:-"${HOME}/.jetstream.json"}
+duckdb_dest=${args[1]:-"${HOME}/.jetstream.duckdb"}
 
 require_file "${json_source}"
 
@@ -81,7 +125,7 @@ if [[ -f "${duckdb_dest}" ]]; then
 fi
 
 printf "importing %s to %s ... " "${json_source}" "${duckdb_dest}"
-if ! import_json "${json_source}" "${duckdb_dest}"; then
+if ! import_json --partial "${partial_lines}" "${json_source}" "${duckdb_dest}"; then
     printf "error\n"
     exit 1
 fi
