@@ -3,7 +3,7 @@ mod task;
 use axum::extract::Path;
 use axum::response::sse::{Event, Sse};
 use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
-use duckdb::{Connection, params};
+use duckdb::{Config, Connection};
 use futures::stream::Stream;
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -147,13 +147,35 @@ struct Post {
 #[axum::debug_handler]
 async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> impl IntoResponse {
     let mut posts: Vec<Post> = Vec::new();
-    let db = Connection::open("data/jetstream.duckdb").expect("opening duckdb");
-    let mut stmt = db
-        .prepare("select did, feedpost.createdAt, text from posts where text ilike '%' || ? || '%'")
-        .expect("query");
+    let db_cfg = Config::default()
+        .access_mode(duckdb::AccessMode::ReadOnly)
+        .expect("db config");
+    let db = Connection::open_with_flags("data/jetstream.duckdb", db_cfg).expect("opening duckdb");
+
+    let use_regex = false;
+    let mut term_modified = term.clone();
+
+    let mut stmt = match use_regex {
+        true => {
+            term_modified = format!(r"\b{}\b", term);
+            db.prepare("select did, feedpost.createdAt, text from posts where regexp_matches(text, ?) order by feedpost.createdAt desc limit 1000").expect("preparing regex query")
+            /*
+                -- Query to find all posts containing a specific term
+            db.prepare("SELECT p.cid, p.text
+                FROM fts_main_posts.dict d
+                JOIN fts_main_posts.terms t ON d.termid = t.termid
+                JOIN fts_main_posts.docs doc ON t.docid = doc.docid
+                JOIN posts p ON doc.name = p.cid
+                WHERE d.term = ?
+                LIMIT 1000
+                ").expect("preparing join query")
+            */
+        }
+        false => db.prepare("select did, feedpost.createdAt, text from posts where text ilike '%' || ? || '%' order by feedpost.createdAt desc limit 1000").expect("preparing query"),
+    };
 
     let posts_iter = stmt
-        .query_map([term], |row| {
+        .query_map([term_modified], |row| {
             Ok(Post {
                 did: row.get(0)?,
                 created_at: row.get(1)?,
