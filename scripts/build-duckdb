@@ -41,6 +41,7 @@ require_no_file() {
 import_json() {
     local file_json
     local file_duck
+    local file_duck_tmp
     local partial_lines
     declare -a args
 
@@ -61,7 +62,9 @@ import_json() {
 
     file_json="${args[0]}"
     file_duck="${args[1]}"
-    require_no_file "${file_duck}"
+    file_duck_tmp="${file_duck}.tmp"
+    # require_no_file "${file_duck}"
+    require_no_file "${file_duck_tmp}"
 
     # partail import
     if (( partial_lines > 0 )); then
@@ -76,15 +79,23 @@ import_json() {
     # sample entire file before processing to avoid any unexpected fields
     cmd=$(printf "create table posts as select * from read_json_auto('%s', sample_size = -1)" "${file_json}")
     # printf "cmd: %s\n" "${cmd}"
-    duckdb "${file_duck}" "${cmd}" &>/dev/null
     # duckdb "${file_duck}" "${cmd}"
+    nice duckdb "${file_duck_tmp}" "${cmd}" &>/dev/null
+    # replace old file
+    mv "${file_duck_tmp}" "${file_duck}"
+}
+
+file_info() {
+    for f in "$@"; do
+        printf "%s %s bytes\n" "${f}" "$(stat -c "%s" "${f}")"
+    done
 }
 
 fts_index() {
     local file_duck
     file_duck=$1
 
-    cmd=$(printf "pragma create_fts_index(posts, did, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 0)")
+    cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 0)")
     duckdb "${file_duck}" "${cmd}" &>/dev/null
 }
 
@@ -119,10 +130,12 @@ duckdb_dest=${args[1]:-"${HOME}/.jetstream.duckdb"}
 
 require_file "${json_source}"
 
+printf "%s starting build\n" "$(TZ=UTC date)"
+
 # remove database before rebuild if present
-if [[ -f "${duckdb_dest}" ]]; then
-    rm "${duckdb_dest}"
-fi
+# if [[ -f "${duckdb_dest}" ]]; then
+#     rm "${duckdb_dest}"
+# fi
 
 printf "importing %s to %s ... " "${json_source}" "${duckdb_dest}"
 if ! import_json --partial "${partial_lines}" "${json_source}" "${duckdb_dest}"; then
@@ -137,3 +150,6 @@ if ! fts_index "${duckdb_dest}"; then
     exit 1
 fi
 printf "ok\n"
+
+printf "%s build complete\n" "$(TZ=UTC date)"
+file_info "${json_source}" "${duckdb_dest}"
