@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+build_fts() {
+    local q
+
+    # delete existing
+    q="drop table if exists search"
+    if ! query "$q"; then
+        printf "error dropping fts table\n"
+        return 1
+    fi
+
+    # call fts extension
+    q="create virtual table search using fts5(cid unindexed, text)"
+    if ! query "$q"; then
+        printf "error creating fts vtable\n" 1>&2
+        return 1
+    fi
+
+    # insert all existing data
+    q="insert into search (cid, text) select cid, text from posts"
+    if ! query "$q"; then
+        printf "error indexing fts table\n"
+        return 1
+    fi
+
+    return 0
+}
+
+query() {
+    local db
+    local q
+    declare -a cmd
+
+    db="${HOME}/.jetstream.sqlite3"
+    q=${1:-"select count() from posts"}
+
+    cmd+=(sqlite3)
+    cmd+=("$db")
+    cmd+=("$q")
+
+    if data=$("${cmd[@]}"); then
+        printf "%s\n" "$data"
+        return 0 # true
+    fi
+    return 1
+}
+
+search() {
+    local q
+    local term
+    term=$1
+
+    q="select cid, rank, snippet(search, 1, '[', ']', '...', 100) from search WHERE search match '$term' order by rank"
+    if ! query "$q"; then
+        printf "error executing search query\n"
+        return 1
+    fi
+    return 0
+}
+
+skim() {
+    declare -a cmd
+
+    # sk -d '\|' --with-nth 2.. --nth 2 -i -c './scripts/query-sqlite search "{}"'
+    cmd+=("sk")
+    cmd+=(-d '\|')
+    cmd+=(--with-nth 2..)
+    cmd+=(--nth 2)
+    cmd+=(-i)
+    cmd+=(-c './scripts/query-sqlite search "{}"')
+    cmd+=(--preview './scripts/query-sqlite preview {1}')
+    cmd+=(--preview-window "down:10%:wrap")
+
+    "${cmd[@]}"
+}
+
+preview() {
+    local cid
+    local q
+    cid=$1
+
+    q="select feedpost from posts where cid = '$cid' limit 1"
+    if ! query "$q" | jq -c -C '.feedpost | { createdAt, text }'; then
+        printf "error executing query: %s\n" "$q"
+        return 1
+    fi
+    return 0
+}
+
+"$@"
