@@ -177,5 +177,12 @@ if ! fts_index "${duckdb_dest}"; then
 fi
 printf "ok\n"
 
+printf "removing temp file %s ... " "${json_source}"
+if ! rm "${json_source}"; then
+    printf "error\n"
+    exit 1
+fi
+printf "ok\n"
+
 printf "%s build complete\n" "$(TZ=UTC date)"
 file_info "${json_source}" "${duckdb_dest}"

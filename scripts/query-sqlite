@@ -83,7 +83,7 @@ preview() {
     cid=$1
 
     q="select feedpost from posts where cid = '$cid' limit 1"
-    if ! query "$q" | jq -c -C '.feedpost | { createdAt, text }'; then
+    if ! query "$q" | jq -c '.feedpost | { createdAt, text }'; then
         printf "error executing query: %s\n" "$q"
         return 1
     fi

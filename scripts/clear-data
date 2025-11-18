@@ -6,10 +6,10 @@ declare -a remove
 sleep_seconds=3
 
 files+=("data/jetstream.json")
-files+=("data/jetstream.json.partial")
-files+=("data/jetstream.sqlite3")
-files+=("data/jetstream.sqlite3-shm")
-files+=("data/jetstream.sqlite3-wal")
+# files+=("data/jetstream.json.partial")
+# files+=("data/jetstream.sqlite3")
+# files+=("data/jetstream.sqlite3-shm")
+# files+=("data/jetstream.sqlite3-wal")
 files+=("data/jetstream.duckdb")
 
 # only remove files that are present
