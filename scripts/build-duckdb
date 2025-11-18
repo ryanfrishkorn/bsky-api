@@ -44,12 +44,17 @@ export_json_file() {
     local db
     local file_json
     declare -a cmd
+    local time_start
+    local time_stop
+
     db=$1
     file_json=$2
+    time_start="$(TZ=UTC date -I)T00:00:00"
+    time_stop="$(TZ=UTC date -I)T23:59:59"
 
     cmd+=(sqlite3 -readonly)
     cmd+=("$db")
-    cmd+=("select feedpost from posts order by rowid")
+    cmd+=("select feedpost from posts where json_extract(feedpost, '$.feedpost.createdAt') >= '$time_start' and json_extract(feedpost, '$.feedpost.createdAt') <= '$time_stop' order by rowid")
 
     "${cmd[@]}" > "$file_json"
 }
@@ -185,4 +190,4 @@ fi
 printf "ok\n"
 
 printf "%s build complete\n" "$(TZ=UTC date)"
-file_info "${json_source}" "${duckdb_dest}"
+# file_info "${json_source}" "${duckdb_dest}"
