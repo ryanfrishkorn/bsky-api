@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -eo pipefail
+
 SCRIPT_NAME=$(basename "$0")
 
 usage() {
@@ -38,11 +40,26 @@ require_no_file() {
     return 0
 }
 
+export_json_file() {
+    local db
+    local file_json
+    declare -a cmd
+    db=$1
+    file_json=$2
+
+    cmd+=(sqlite3 -readonly)
+    cmd+=("$db")
+    cmd+=("select feedpost from posts order by rowid")
+
+    "${cmd[@]}" > "$file_json"
+}
+
 import_json() {
     local file_json
     local file_duck
     local file_duck_tmp
     local partial_lines
+    local cmd
     declare -a args
 
     # parse options
@@ -93,6 +110,7 @@ file_info() {
 
 fts_index() {
     local file_duck
+    local cmd
     file_duck=$1
 
     cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 0)")
@@ -125,10 +143,9 @@ done
 
 require_bin duckdb
 
-json_source=${args[0]:-"${HOME}/.jetstream.json"}
-duckdb_dest=${args[1]:-"${HOME}/.jetstream.duckdb"}
-
-require_file "${json_source}"
+sqlite_source="data/jetstream.sqlite3"
+json_source=${args[0]:-"data/jetstream.json"}
+duckdb_dest=${args[1]:-"data/jetstream.duckdb"}
 
 printf "%s starting build\n" "$(TZ=UTC date)"
 
@@ -136,6 +153,15 @@ printf "%s starting build\n" "$(TZ=UTC date)"
 # if [[ -f "${duckdb_dest}" ]]; then
 #     rm "${duckdb_dest}"
 # fi
+
+printf "export json to file ... "
+if ! export_json_file "${sqlite_source}" "${json_source}"; then
+    printf "error\n"
+    exit 1
+fi
+printf "ok\n"
+
+require_file "${json_source}"
 
 printf "importing %s to %s ... " "${json_source}" "${duckdb_dest}"
 if ! import_json --partial "${partial_lines}" "${json_source}" "${duckdb_dest}"; then
