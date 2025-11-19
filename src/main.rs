@@ -5,7 +5,7 @@ use axum::response::sse::{Event, Sse};
 use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use duckdb::{Config, Connection};
 use futures::stream::Stream;
-use log::info;
+use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::process::{Command, Stdio};
@@ -140,7 +140,9 @@ async fn run_task(Path(process): Path<String>, State(state): State<AppState>) ->
 #[derive(Debug, Serialize, Deserialize)]
 struct Post {
     did: String,
+    cid: String,
     created_at: String,
+    score: f64,
     text: String,
 }
 
@@ -152,41 +154,43 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
         .expect("db config");
     let db = Connection::open_with_flags("data/jetstream.duckdb", db_cfg).expect("opening duckdb");
 
-    let use_regex = false;
-    let mut term_modified = term.clone();
+    info!("searching for term: {}", term);
+    let query_prefix = r#"
+        select score, did, cid, feedpost.createdAt, text from (select *, fts_main_posts.match_bm25(cid, '
+    "#.trim();
+    let query_remainder = r#"
+        ', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score from posts) where score is not null order by score desc
+    "#.trim();
+    let query = format!("{}{}{}", query_prefix, term, query_remainder);
+    debug!("query: {}", query);
 
-    let mut stmt = match use_regex {
-        true => {
-            term_modified = format!(r"\b{}\b", term);
-            db.prepare("select did, feedpost.createdAt, text from posts where regexp_matches(text, ?) order by feedpost.createdAt desc limit 1000").expect("preparing regex query")
-            /*
-                -- Query to find all posts containing a specific term
-            db.prepare("SELECT p.cid, p.text
-                FROM fts_main_posts.dict d
-                JOIN fts_main_posts.terms t ON d.termid = t.termid
-                JOIN fts_main_posts.docs doc ON t.docid = doc.docid
-                JOIN posts p ON doc.name = p.cid
-                WHERE d.term = ?
-                LIMIT 1000
-                ").expect("preparing join query")
-            */
-        }
-        false => db.prepare("select did, feedpost.createdAt, text from posts where text ilike '%' || ? || '%' order by feedpost.createdAt desc limit 1000").expect("preparing query"),
-    };
+    let mut stmt = db
+        .prepare(&query)
+        .map_err(|e| {
+            log::error!("{}", e);
+            panic!("panicked preparing statement");
+        })
+        .expect("logged error");
 
     let posts_iter = stmt
-        .query_map([term_modified], |row| {
+        .query_map([], |row| {
             Ok(Post {
-                did: row.get(0)?,
-                created_at: row.get(1)?,
-                text: row.get(2)?,
+                score: row.get(0)?,
+                did: row.get(1)?,
+                cid: row.get(2)?,
+                created_at: row.get(3)?,
+                text: row.get(4)?,
             })
         })
-        .unwrap();
+        .expect("during query_map");
 
     for p in posts_iter {
-        if let Ok(good_post) = p {
-            posts.push(good_post);
+        match p {
+            Ok(good_post) => {
+                trace!("post: {:?}", good_post);
+                posts.push(good_post);
+            }
+            Err(e) => error!("{e}"),
         }
     }
     Json(posts)

@@ -15,7 +15,7 @@ impl Task {
             Process::BskyTrending => Self {
                 process,
                 cmd: "./bin/bsky-trending".to_string(),
-                args: vec![
+                args: [
                     "--db",
                     "data/jetstream.duckdb",
                     "--limit",
