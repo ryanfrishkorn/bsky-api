@@ -154,14 +154,25 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
         .expect("db config");
     let db = Connection::open_with_flags("data/jetstream.duckdb", db_cfg).expect("opening duckdb");
 
+    // Set DuckDB configuration to allow match_bm25 macro to work
+    db.execute("SET scalar_subquery_error_on_multiple_rows=false", [])
+        .expect("setting scalar_subquery configuration");
+
     info!("searching for term: {}", term);
     let query_prefix = r#"
-        select score, did, cid, feedpost.createdAt, text from (select *, fts_main_posts.match_bm25(cid, '
-    "#.trim();
+        select fts_main_posts.match_bm25(cid, '
+    "#
+    .trim();
     let query_remainder = r#"
-        ', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score from posts) where score is not null order by score desc
+        ', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score, did, cid, feedpost.createdAt, text from posts where fts_main_posts.match_bm25(cid, '
     "#.trim();
-    let query = format!("{}{}{}", query_prefix, term, query_remainder);
+    let query_suffix = r#"
+        ', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) is not null order by score desc limit 1000
+    "#.trim();
+    let query = format!(
+        "{}{}{}{}{}",
+        query_prefix, term, query_remainder, term, query_suffix
+    );
     debug!("query: {}", query);
 
     let mut stmt = db
