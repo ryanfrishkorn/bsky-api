@@ -50,7 +50,7 @@ async fn main() {
         .format_file(true)
         .format_line_number(true)
         .init();
-    let bind_address = "127.0.0.1";
+    let bind_address = "0.0.0.0";
     info!("starting with bind address {}", bind_address);
     let cors_layer = CorsLayer::new().allow_origin(Any).allow_methods(Any);
     info!("cors_layer: {:?}", cors_layer);
@@ -159,24 +159,24 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
         .expect("setting scalar_subquery configuration");
 
     info!("searching for term: {}", term);
-    let query_prefix = r#"
-        select fts_main_posts.match_bm25(cid, '
-    "#
-    .trim();
-    let query_remainder = r#"
-        ', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score, did, cid, feedpost.createdAt, text from posts where fts_main_posts.match_bm25(cid, '
+    let query = r#"
+        select fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0) as score, did, cid, feedpost.createdAt, text
+        from posts
+        where fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0) is not null
+        order by score desc
+        limit 1000
     "#.trim();
-    let query_suffix = r#"
-        ', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) is not null order by score desc limit 1000
-    "#.trim();
-    let query = format!(
-        "{}{}{}{}{}",
-        query_prefix, term, query_remainder, term, query_suffix
+    debug!(
+        "query: {}",
+        query
+            .split('\n')
+            .map(|x| x.trim().to_string())
+            .collect::<Vec<String>>()
+            .join(" ")
     );
-    debug!("query: {}", query);
 
     let mut stmt = db
-        .prepare(&query)
+        .prepare(query)
         .map_err(|e| {
             log::error!("{}", e);
             panic!("panicked preparing statement");
@@ -184,7 +184,7 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
         .expect("logged error");
 
     let posts_iter = stmt
-        .query_map([], |row| {
+        .query_map([&term, &term], |row| {
             Ok(Post {
                 score: row.get(0)?,
                 did: row.get(1)?,
