@@ -41,6 +41,13 @@ impl Task {
                 status: TaskStatus::Created,
                 result: None,
             },
+            Process::ListData => Self {
+                process,
+                cmd: "./scripts/list-data".to_string(),
+                args: vec![],
+                status: TaskStatus::Created,
+                result: None,
+            },
             Process::ClearData => Self {
                 process,
                 cmd: "./scripts/clear-data".to_string(),
@@ -101,6 +108,7 @@ pub enum TaskResult {
 pub enum Process {
     BskyTrending,
     BuildDuckDb,
+    ListData,
     ClearData,
     Date,
     Jetstream,
