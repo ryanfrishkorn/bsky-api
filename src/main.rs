@@ -160,7 +160,7 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
 
     info!("searching for term: {}", term);
     let query = r#"
-        select distinct(fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0)) as score, did, cid, feedpost.createdAt, text
+        select distinct(fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0)) as score, did, cid, created_at, text
         from posts
         where fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0) is not null
         order by score desc

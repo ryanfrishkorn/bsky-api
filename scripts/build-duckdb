@@ -40,6 +40,28 @@ require_no_file() {
     return 0
 }
 
+create_database() {
+    local db_path=$1
+
+    # overwrite if exists, so pass a temp file to this function
+    if [[ -f "${db_path}" ]]; then
+        rm "${db_path}"
+    fi
+
+    read -r -d '' schema_query <<- 'EOF'
+        create table posts(did varchar, cid varchar, created_at varchar, text varchar);
+EOF
+    #     read -r -d '' schema_query <<- 'EOF'
+    # CREATE TABLE posts(did VARCHAR, cid VARCHAR, feedpost STRUCT("$type" VARCHAR, createdAt VARCHAR, embed STRUCT("$type" VARCHAR, images STRUCT(alt VARCHAR, aspectRatio STRUCT(height BIGINT, width BIGINT), image STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT, cid VARCHAR))[], media STRUCT("$type" VARCHAR, alt VARCHAR, aspectRatio STRUCT(height BIGINT, width BIGINT), video STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), "external" STRUCT(description VARCHAR, thumb STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), title VARCHAR, uri VARCHAR), images STRUCT(alt VARCHAR, aspectRatio STRUCT(height BIGINT, width BIGINT), image STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT))[]), record STRUCT("$type" VARCHAR, record STRUCT(cid VARCHAR, uri VARCHAR, "$type" VARCHAR), cid VARCHAR, uri VARCHAR), "external" STRUCT(description VARCHAR, thumb STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), title VARCHAR, uri VARCHAR), aspectRatio STRUCT(height BIGINT, width BIGINT), video STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), alt VARCHAR, captions STRUCT(file STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), lang VARCHAR)[]), facets STRUCT(features STRUCT("$type" VARCHAR, tag VARCHAR, uri VARCHAR, did VARCHAR)[], "index" STRUCT(byteEnd BIGINT, byteStart BIGINT))[], langs VARCHAR[], "text" VARCHAR, reply STRUCT(parent STRUCT(cid VARCHAR, uri VARCHAR, "$type" VARCHAR), root STRUCT(cid VARCHAR, uri VARCHAR, "$type" VARCHAR)), labels STRUCT("$type" VARCHAR, "values" STRUCT(val VARCHAR)[]), tags VARCHAR[], entities STRUCT("index" STRUCT("end" BIGINT, "start" BIGINT), "type" VARCHAR, "value" VARCHAR)[]), "text" VARCHAR);
+    # EOF
+
+    # printf "schema_query: %s\n" "${schema_query}"
+    if ! duckdb "${db_path}" < <(printf "%s\n" "${schema_query}"); then
+        return 1
+    fi
+    return 0
+}
+
 export_json_file() {
     local db
     local file_json
@@ -64,7 +86,8 @@ import_json() {
     local file_duck
     local file_duck_tmp
     local partial_lines
-    local cmd
+    local schema_query
+    local insert_query
     declare -a args
 
     # parse options
@@ -84,9 +107,10 @@ import_json() {
 
     file_json="${args[0]}"
     file_duck="${args[1]}"
-    file_duck_tmp="${file_duck}.tmp"
-    # require_no_file "${file_duck}"
-    require_no_file "${file_duck_tmp}"
+    file_duck_tmp="${args[2]}"
+
+    # look for previously created database with schema
+    require_file "${file_duck_tmp}"
 
     # partail import
     if (( partial_lines > 0 )); then
@@ -99,10 +123,12 @@ import_json() {
         fi
     fi
     # sample entire file before processing to avoid any unexpected fields
-    cmd=$(printf "create table posts as select * from read_json_auto('%s', sample_size = -1)" "${file_json}")
-    # printf "cmd: %s\n" "${cmd}"
-    # duckdb "${file_duck}" "${cmd}"
-    nice duckdb "${file_duck_tmp}" "${cmd}" &>/dev/null
+    # insert_query=$(printf "insert into posts select * from read_json('%s', sample_size = -1)" "${file_json}")
+    insert_query=$(printf "insert into posts select did, cid, feedpost.createdAt as createdAt, feedpost.text as text from read_json('%s')" "${file_json}")
+    if ! duckdb "${file_duck_tmp}" "${insert_query}" &>/dev/null; then
+        printf "insert_query: %s\n" "${insert_query}"
+        return 1
+    fi
     # replace old file
     mv "${file_duck_tmp}" "${file_duck}"
 }
@@ -151,6 +177,7 @@ require_bin duckdb
 sqlite_source="data/jetstream.sqlite3"
 json_source=${args[0]:-"data/jetstream.json"}
 duckdb_dest=${args[1]:-"data/jetstream.duckdb"}
+duckdb_dest_tmp="${duckdb_dest}.tmp"
 
 printf "%s starting build\n" "$(TZ=UTC date)"
 
@@ -158,6 +185,16 @@ printf "%s starting build\n" "$(TZ=UTC date)"
 # if [[ -f "${duckdb_dest}" ]]; then
 #     rm "${duckdb_dest}"
 # fi
+
+printf "create database and write schema ... "
+if ! create_database "${duckdb_dest_tmp}"; then
+    printf "error\n"
+    exit 1
+fi
+printf "ok\n"
+
+require_file "${duckdb_dest_tmp}"
+require_file "${sqlite_source}"
 
 printf "export json to file ... "
 if ! export_json_file "${sqlite_source}" "${json_source}"; then
@@ -169,7 +206,7 @@ printf "ok\n"
 require_file "${json_source}"
 
 printf "importing %s to %s ... " "${json_source}" "${duckdb_dest}"
-if ! import_json --partial "${partial_lines}" "${json_source}" "${duckdb_dest}"; then
+if ! import_json --partial "${partial_lines}" "${json_source}" "${duckdb_dest}" "${duckdb_dest_tmp}"; then
     printf "error\n"
     exit 1
 fi
