@@ -65,6 +65,7 @@ EOF
 export_json_file() {
     local db
     local file_json
+    local export_query
     declare -a cmd
     local time_start
     local time_stop
@@ -73,10 +74,22 @@ export_json_file() {
     file_json=$2
     time_start="$(TZ=UTC date -I)T00:00:00"
     time_stop="$(TZ=UTC date -I)T23:59:59"
+    read -r -d '' export_query <<- EOF
+        select json_extract(feedpost, '$.did') as did,
+        json_extract(feedpost, '$.cid') as cid,
+        json_extract(feedpost, '$.feedpost.createdAt') as created_at,
+        json_extract(feedpost, '$.feedpost.text') as text
+        from posts
+        where json_extract(feedpost, '$.feedpost.createdAt') >= '$time_start'
+        and json_extract(feedpost, '$.feedpost.createdAt') <= '$time_stop'
+        and json_extract(feedpost, '$.feedpost.langs') = '["en"]'
+        order by rowid
+EOF
 
-    cmd+=(sqlite3 -readonly)
+    cmd+=(sqlite3 -readonly -json)
     cmd+=("$db")
-    cmd+=("select feedpost from posts where json_extract(feedpost, '$.feedpost.createdAt') >= '$time_start' and json_extract(feedpost, '$.feedpost.createdAt') <= '$time_stop' order by rowid")
+    # cmd+=("select json_extract(feedpost, '$.did') as did, json_extract(feedpost, '$.cid') as cid, json_extract(feedpost, '$.feedpost.createdAt') as created_at, json_extract(feedpost, '$.feedpost.text') as text from posts where json_extract(feedpost, '$.feedpost.createdAt') >= '$time_start' and json_extract(feedpost, '$.feedpost.createdAt') <= '$time_stop' and json_extract(feedpost, '$.feedpost.langs') = '[\"en\"]' order by rowid")
+    cmd+=("${export_query}")
 
     "${cmd[@]}" > "$file_json"
 }
@@ -124,7 +137,7 @@ import_json() {
     fi
     # sample entire file before processing to avoid any unexpected fields
     # insert_query=$(printf "insert into posts select * from read_json('%s', sample_size = -1)" "${file_json}")
-    insert_query=$(printf "insert into posts select did, cid, feedpost.createdAt as createdAt, feedpost.text as text from read_json('%s')" "${file_json}")
+    insert_query=$(printf "insert into posts select did, cid, created_at, text from read_json_auto('%s')" "${file_json}")
     if ! duckdb "${file_duck_tmp}" "${insert_query}" &>/dev/null; then
         printf "insert_query: %s\n" "${insert_query}"
         return 1
