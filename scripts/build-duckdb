@@ -75,14 +75,12 @@ export_json_file() {
     time_start="$(TZ=UTC date -I)T00:00:00"
     time_stop="$(TZ=UTC date -I)T23:59:59"
     read -r -d '' export_query <<- EOF
-        select json_extract(feedpost, '$.did') as did,
-        json_extract(feedpost, '$.cid') as cid,
-        json_extract(feedpost, '$.feedpost.createdAt') as created_at,
-        json_extract(feedpost, '$.feedpost.text') as text
+        select did, cid,
+        json_extract(feedpost, '$.createdAt') as created_at,
+        json_extract(feedpost, '$.text') as text
         from posts
-        where json_extract(feedpost, '$.feedpost.createdAt') >= '$time_start'
-        and json_extract(feedpost, '$.feedpost.createdAt') <= '$time_stop'
-        and json_extract(feedpost, '$.feedpost.langs') = '["en"]'
+        where created_at >= '$time_start'
+        and created_at <= '$time_stop'
         order by rowid
 EOF
 
@@ -138,7 +136,7 @@ import_json() {
     # sample entire file before processing to avoid any unexpected fields
     # insert_query=$(printf "insert into posts select * from read_json('%s', sample_size = -1)" "${file_json}")
     insert_query=$(printf "insert into posts select did, cid, created_at, text from read_json_auto('%s')" "${file_json}")
-    if ! duckdb "${file_duck_tmp}" "${insert_query}" &>/dev/null; then
+    if ! duckdb "${file_duck_tmp}" "${insert_query}" >/dev/null; then
         printf "insert_query: %s\n" "${insert_query}"
         return 1
     fi
