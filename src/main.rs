@@ -59,7 +59,7 @@ async fn main() {
         .route("/state", get(api_state))
         .route("/task/{process}", get(run_task))
         .route("/task/{process}/stream", get(stream_task))
-        .route("/search/{term}", get(search))
+        .route("/search/{term}/{order_field}", get(search))
         .with_state(state)
         .layer(ServiceBuilder::new().layer(cors_layer));
     let listener = tokio::net::TcpListener::bind(format!("{bind_address}:3000"))
@@ -147,7 +147,13 @@ struct Post {
 }
 
 #[axum::debug_handler]
-async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> impl IntoResponse {
+async fn search(
+    Path(params): Path<(String, String)>,
+    State(_state): State<AppState>,
+) -> impl IntoResponse {
+    let (term, order_field) = params;
+    let query_limit = 1000.to_string();
+    // let order_field = "created_at";
     let mut posts: Vec<Post> = Vec::new();
     let db_cfg = Config::default()
         .access_mode(duckdb::AccessMode::ReadOnly)
@@ -159,13 +165,16 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
         .expect("setting scalar_subquery configuration");
 
     info!("searching for term: {}", term);
-    let query = r#"
+    let mut query = r#"
         select distinct(fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0)) as score, did, cid, created_at, text
         from posts
         where fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0) is not null
-        order by score desc
-        limit 1000
-    "#.trim();
+    "#.trim().to_string();
+    query = match order_field.as_str() {
+        "created_at" => format!("{} {}", query, "order by created_at desc"),
+        _ => format!("{} {}", query, "order by score desc"),
+    };
+    query = format!("{} limit ?", query);
     debug!(
         "query: {}",
         query
@@ -176,7 +185,7 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
     );
 
     let mut stmt = db
-        .prepare(query)
+        .prepare(&query)
         .map_err(|e| {
             log::error!("{}", e);
             panic!("panicked preparing statement");
@@ -184,7 +193,7 @@ async fn search(Path(term): Path<String>, State(_state): State<AppState>) -> imp
         .expect("logged error");
 
     let posts_iter = stmt
-        .query_map([&term, &term], |row| {
+        .query_map([&term, &term, &query_limit], |row| {
             Ok(Post {
                 score: row.get(0)?,
                 did: row.get(1)?,
