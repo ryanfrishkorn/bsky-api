@@ -81,6 +81,9 @@ export_json_file() {
         from posts
         where created_at >= '$time_start'
         and created_at <= '$time_stop'
+        and (json_extract(feedpost, '$.langs') = '["en"]'
+            or json_extract(feedpost, '$.langs') = ''
+            or json_extract(feedpost, '$.langs') is null)
         order by rowid
 EOF
 
@@ -192,11 +195,6 @@ duckdb_dest_tmp="${duckdb_dest}.tmp"
 
 printf "%s starting build\n" "$(TZ=UTC date)"
 
-# remove database before rebuild if present
-# if [[ -f "${duckdb_dest}" ]]; then
-#     rm "${duckdb_dest}"
-# fi
-
 printf "create database and write schema ... "
 if ! create_database "${duckdb_dest_tmp}"; then
     printf "error\n"
@@ -238,4 +236,3 @@ fi
 printf "ok\n"
 
 printf "%s build complete\n" "$(TZ=UTC date)"
-# file_info "${json_source}" "${duckdb_dest}"
