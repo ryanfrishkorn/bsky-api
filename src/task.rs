@@ -12,6 +12,13 @@ pub struct Task {
 impl Task {
     pub fn new(process: Process) -> Task {
         match process {
+            Process::ArchiveJetstream => Self {
+                process,
+                cmd: "./scripts/archive-jetstream".to_string(),
+                args: Vec::new(),
+                status: TaskStatus::Created,
+                result: None,
+            },
             Process::BskyTrending => Self {
                 process,
                 cmd: "./bin/bsky-trending".to_string(),
@@ -106,6 +113,7 @@ pub enum TaskResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Process {
+    ArchiveJetstream,
     BskyTrending,
     BuildDuckDb,
     ListData,
