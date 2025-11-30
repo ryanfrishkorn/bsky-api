@@ -11,6 +11,7 @@ files+=("data/jetstream.json")
 # files+=("data/jetstream.sqlite3-shm")
 # files+=("data/jetstream.sqlite3-wal")
 files+=("data/jetstream.duckdb")
+files+=("data/jetstream.duckdb.tmp")
 
 # only remove files that are present
 for f in "${files[@]}"; do
