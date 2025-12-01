@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 
-ls -lh data/
+TZ=UTC date
+TZ=UTC ls -lh data/
