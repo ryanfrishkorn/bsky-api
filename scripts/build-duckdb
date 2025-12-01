@@ -81,9 +81,11 @@ export_json_file() {
         from posts
         where created_at >= '$time_start'
         and created_at <= '$time_stop'
-        and (json_extract(feedpost, '$.langs') = '["en"]'
+        and (
+            json_extract(feedpost, '$.langs') = '["en"]'
             or json_extract(feedpost, '$.langs') = ''
-            or json_extract(feedpost, '$.langs') is null)
+            or json_extract(feedpost, '$.langs') is null
+        )
         order by rowid
 EOF
 
