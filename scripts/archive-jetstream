@@ -74,7 +74,7 @@ prefix_yesterday() {
 printf "prefix_today(): %s\n" "$(prefix_today)"
 printf "prefix_yesterday(): %s\n" "$(prefix_yesterday)"
 
-archive_prefix="$(prefix_yesterday)"
+archive_prefix="${1:-$(prefix_yesterday)}"
 db_src="data/jetstream.sqlite3"
 db_dst="$(build_dest_filename "$archive_prefix")"
 printf "archiving all posts from yesterday %s ... " "$archive_prefix"
