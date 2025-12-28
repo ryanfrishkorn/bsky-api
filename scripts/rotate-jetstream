@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+current_db="data/jetstream.sqlite3"
+new_db="data/new.sqlite3"
+
+prefix_today() {
+    TZ=UTC date -I
+}
+
+read -r -d '' query<<-SQL
+	ATTACH 'file:${current_db}?mode=ro' as js;
+	CREATE TABLE posts AS SELECT * FROM js.posts
+	WHERE json_extract(feedpost, '$.createdAt') >= '$(prefix_today)';
+	DETACH js;
+SQL
+
+printf "query: %s\n" "$query"
+
+printf "creating new database ... "
+if sqlite3 "$new_db" < <(printf "%s\n" "$query"); then
+    printf "ok\n"
+fi
