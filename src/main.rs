@@ -169,6 +169,7 @@ async fn search(
         select distinct(fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0)) as score, did, cid, created_at, text
         from posts
         where fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0) is not null
+        and score >= 4.0
     "#.trim().to_string();
     query = match order_field.as_str() {
         "created_at" => format!("{} {}", query, "order by created_at desc"),
