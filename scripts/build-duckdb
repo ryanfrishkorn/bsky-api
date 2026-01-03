@@ -54,17 +54,18 @@ build_from_sqlite() {
         attach '$sqlite_source' as js (TYPE sqlite, READONLY true);
         create table posts as
         select did, cid,
-        CASE
-            WHEN json_exists(feedpost, '$.createdAt')
-            THEN json_extract(feedpost, '$.createdAt')
-            ELSE NULL
-        END as created_at,
-        CASE
-            WHEN json_exists(feedpost, '$.text')
-            THEN json_extract(feedpost, '$.text')
-            ELSE NULL
-        END as text
+        case
+            when json_exists(feedpost, '$.createdAt')
+            then json_extract_string(feedpost, '$.createdAt')
+            else NULL
+        end as created_at,
+        case
+            when json_exists(feedpost, '$.text')
+            then json_extract_string(feedpost, '$.text')
+            else NULL
+        end as text
         from js.posts
+        where json_extract(feedpost, '$.langs') = '["en"]'
         order by rowid
 EOF
 
