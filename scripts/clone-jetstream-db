@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -uo pipefail
 
 create_sqlite_clone() {
     declare -a cmd
@@ -13,8 +13,11 @@ create_sqlite_clone() {
     db_clone_tmp="data/sync_new.sqlite3"
     # clone new database
     read -r -d '' q <<-SQL || true
-        .clone '$db_clone_tmp';
+        .clone '$db_clone_tmp'
 SQL
+
+    # remove db_clone_tmp if present from previous failure
+    rm "$db_clone_tmp" &>/dev/null
 
     # sqlite3 -readonly data/jetstream.sqlite3 ".clone 'data/sync_new.sqlite3'"
     cmd+=(sqlite3 -readonly)
@@ -24,8 +27,15 @@ SQL
         return 1
     fi
 
+    # remove database and wal files
+    if [[ -f "${db_clone}" ]]; then rm "${db_clone}" &>/dev/null; fi
+    if [[ -f "${db_clone}-wal" ]]; then rm "${db_clone}-wal" &>/dev/null; fi
+    if [[ -f "${db_clone}-shm" ]]; then rm "${db_clone}-shm" &>/dev/null; fi
+
+    # replace with new
     mv "$db_clone_tmp" "$db_clone"
-    sqlite3 data/sync.sqlite3 "pragma journal_mode=wal"
+    # enable WAL for sqlite3-rsync
+    sqlite3 "$db_clone" "pragma journal_mode=wal"
 }
 
 create_sqlite_clone

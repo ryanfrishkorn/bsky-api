@@ -15,7 +15,7 @@ analyze_term() {
 
     read -r -d '' query <<-SQL || true
         set timezone = 'UTC';
-        select p.created_at::TIMESTAMPTZ at time zone 'UTC' as created_at, a.term, a.termid, b.docid, c.name, p.text
+        select distinct p.created_at as created_at, a.term, a.termid, b.docid, c.name, p.text
         from fts_main_posts.dict as a
         inner join fts_main_posts.terms as b on a.termid = b.termid
         inner join fts_main_posts.docs as c on b.docid = c.docid
