@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -xeo pipefail
 
 SCRIPT_NAME=$(basename "$0")
 
@@ -56,7 +56,7 @@ build_from_sqlite() {
         select did, cid,
         case
             when json_exists(feedpost, '$.createdAt')
-            then json_extract_string(feedpost, '$.createdAt')
+            then json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ
             else NULL
         end as created_at,
         case
@@ -117,7 +117,7 @@ export_json_file() {
     file_json=$2
     time_start="$(TZ=UTC date -I)T00:00:00"
     time_stop="$(TZ=UTC date -I)T23:59:59"
-    read -r -d '' export_query <<- EOF
+    read -r -d '' export_query <<-EOF || true
         select did, cid,
         json_extract(feedpost, '$.createdAt') as created_at,
         json_extract(feedpost, '$.text') as text
@@ -204,7 +204,7 @@ fts_index() {
     file_duck=$1
 
     cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 0)")
-    duckdb "${file_duck}" "${cmd}" &>/dev/null
+    duckdb "${file_duck}" "${cmd}"
 }
 
 usage() {
@@ -245,6 +245,11 @@ time_start=${args[0]:-"$(TZ=UTC date -I)T00:00:00"}
 time_stop=${args[1]:-"$(TZ=UTC date -I)T23:59:59"}
 
 printf "%s starting build\n" "$(TZ=UTC date)"
+
+# remove tmp database in case of previous failure
+if [[ -f "$duckdb_dest_tmp" ]]; then
+    rm "$duckdb_dest_tmp" &>/dev/null
+fi
 
 printf "building database from sqlite ... "
 if ! build_from_sqlite "${sqlite_source}" "${duckdb_dest_tmp}" "${time_start}" "${time_stop}"; then

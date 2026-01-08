@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+sync_sqlite_clone() {
+    declare -a cmd
+    local db_source
+    local db_dest
+
+    db_source=$1
+    db_dest=$2
+
+    # sqlite3-rsync -v --exe "/Users/alphalux/bin/sqlite3-rsync" mini:~/bluerift/bsky-api/data/sync.sqlite3 data/jetstream.sqlite3
+    cmd+=(sqlite3-rsync -v)
+    cmd+=(--exe "${HOME}/bin/sqlite3-rsync")
+    # cmd+=("mini:~/bluerift/bsky-api/data/sync.sqlite3")
+    cmd+=("$db_source")
+    # cmd+=("data/jetstream.sqlite3")
+    cmd+=("$db_dest")
+
+    printf "%s\n" "${cmd[*]}" 1>&2
+    "${cmd[@]}"
+}
+
+sync_sqlite_clone "mini:~/bluerift/bsky-api/data/sync.sqlite3" "data/jetstream.sqlite3"

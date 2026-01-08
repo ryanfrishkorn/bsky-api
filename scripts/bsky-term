@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+script_name=$(basename "$0")
+database="${HOME}/.jetstream.duckdb"
+
+analyze_term() {
+    declare -a cmd
+    local query
+    local term
+
+    cmd+=(duckdb -json "$database")
+    term=$1
+
+    read -r -d '' query <<-SQL || true
+        set timezone = 'UTC';
+        select p.created_at::TIMESTAMPTZ at time zone 'UTC' as created_at, a.term, a.termid, b.docid, c.name, p.text
+        from fts_main_posts.dict as a
+        inner join fts_main_posts.terms as b on a.termid = b.termid
+        inner join fts_main_posts.docs as c on b.docid = c.docid
+        inner join posts as p on c.name = p.cid
+        where a.term = '$term'
+        and p.created_at < now()
+        -- using sample 10%
+        order by p.created_at desc;
+SQL
+
+    # printf "query: %s\n" "$query" 1>&2
+    "${cmd[@]}" < <(printf "%s" "$query")
+}
+
+usage() {
+    printf "usage: %s <term>\n" "$script_name"
+    exit 1
+}
+
+declare -a args
+
+# parse options
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        "--help")
+            shift
+            usage
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if (( ${#args[@]} != 1 )); then
+    # printf "args: %s\n" "${args[@]}"
+    usage
+fi
+
+term=${args[0]}
+analyze_term "$term" | jq -c '.[] | { created_at, text }'

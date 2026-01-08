@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+create_sqlite_clone() {
+    declare -a cmd
+    local db
+    local db_clone
+    local db_clone_tmp
+
+    db="data/jetstream.sqlite3"
+    db_clone="data/sync.sqlite3"
+    db_clone_tmp="data/sync_new.sqlite3"
+    # clone new database
+    read -r -d '' q <<-SQL || true
+        .clone '$db_clone_tmp';
+SQL
+
+    # sqlite3 -readonly data/jetstream.sqlite3 ".clone 'data/sync_new.sqlite3'"
+    cmd+=(sqlite3 -readonly)
+    cmd+=("$db")
+    if ! "${cmd[@]}" < <(printf "%s" "$q"); then
+        printf "error cloning database\n"
+        return 1
+    fi
+
+    mv "$db_clone_tmp" "$db_clone"
+    sqlite3 data/sync.sqlite3 "pragma journal_mode=wal"
+}
+
+create_sqlite_clone
