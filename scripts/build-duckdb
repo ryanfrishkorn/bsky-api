@@ -38,21 +38,24 @@ require_no_file() {
 build_from_sqlite() {
     local sqlite_source
     local duckdb_dest
-    local time_start
-    local time_stop
     declare -a cmd
 
-    sqlite_source=$1
-    duckdb_dest=$2
-    time_start=$3
-    time_stop=$4
+    duckdb_dest=$1
+    sqlite_source=$2
 
-    cmd+=(duckdb "$duckdb_dest")
+    # create schema
+    read -r -d '' create_query <<-SQL
+        create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, created_at TIMESTAMPTZ, text VARCHAR);
+SQL
+    cmd=(duckdb "$duckdb_dest")
+    "${cmd[@]}" < <(printf "%s" "$create_query")
 
-    read -r -d '' build_query <<- EOF
+    cmd=(duckdb "$duckdb_dest")
+
+    read -r -d '' build_query <<-SQL
         load sqlite;
         attach '$sqlite_source' as js (TYPE sqlite, READONLY true);
-        create table posts as
+        insert or ignore into posts
         select did, cid,
         case
             when json_exists(feedpost, '$.createdAt')
@@ -67,129 +70,15 @@ build_from_sqlite() {
         from js.posts
         where json_extract(feedpost, '$.langs') = '["en"]'
         order by rowid
-EOF
+SQL
 
-
-    # where created_at >= '$time_start'
-    # and created_at <= '$time_stop'
     # and (
     #     json_extract(feedpost, '$.langs') = '["en"]'
     #     or json_extract(feedpost, '$.langs') = ''
     #     or json_extract(feedpost, '$.langs') is null
     # )
 
-    # printf "%s\n" "${cmd[*]}"
-    # printf "query: %s\n" "$build_query"
-    "${cmd[@]}" < <(printf "%s" "$build_query")
-}
-
-create_database() {
-    local db_path=$1
-
-    # overwrite if exists, so pass a temp file to this function
-    if [[ -f "${db_path}" ]]; then
-        rm "${db_path}"
-    fi
-
-    read -r -d '' schema_query <<- 'EOF'
-        create table posts(did varchar, cid varchar, created_at varchar, text varchar);
-EOF
-    #     read -r -d '' schema_query <<- 'EOF'
-    # CREATE TABLE posts(did VARCHAR, cid VARCHAR, feedpost STRUCT("$type" VARCHAR, createdAt VARCHAR, embed STRUCT("$type" VARCHAR, images STRUCT(alt VARCHAR, aspectRatio STRUCT(height BIGINT, width BIGINT), image STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT, cid VARCHAR))[], media STRUCT("$type" VARCHAR, alt VARCHAR, aspectRatio STRUCT(height BIGINT, width BIGINT), video STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), "external" STRUCT(description VARCHAR, thumb STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), title VARCHAR, uri VARCHAR), images STRUCT(alt VARCHAR, aspectRatio STRUCT(height BIGINT, width BIGINT), image STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT))[]), record STRUCT("$type" VARCHAR, record STRUCT(cid VARCHAR, uri VARCHAR, "$type" VARCHAR), cid VARCHAR, uri VARCHAR), "external" STRUCT(description VARCHAR, thumb STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), title VARCHAR, uri VARCHAR), aspectRatio STRUCT(height BIGINT, width BIGINT), video STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), alt VARCHAR, captions STRUCT(file STRUCT("$type" VARCHAR, "ref" STRUCT("$link" VARCHAR), mimeType VARCHAR, size BIGINT), lang VARCHAR)[]), facets STRUCT(features STRUCT("$type" VARCHAR, tag VARCHAR, uri VARCHAR, did VARCHAR)[], "index" STRUCT(byteEnd BIGINT, byteStart BIGINT))[], langs VARCHAR[], "text" VARCHAR, reply STRUCT(parent STRUCT(cid VARCHAR, uri VARCHAR, "$type" VARCHAR), root STRUCT(cid VARCHAR, uri VARCHAR, "$type" VARCHAR)), labels STRUCT("$type" VARCHAR, "values" STRUCT(val VARCHAR)[]), tags VARCHAR[], entities STRUCT("index" STRUCT("end" BIGINT, "start" BIGINT), "type" VARCHAR, "value" VARCHAR)[]), "text" VARCHAR);
-    # EOF
-
-    # printf "schema_query: %s\n" "${schema_query}"
-    if ! duckdb "${db_path}" < <(printf "%s\n" "${schema_query}"); then
-        return 1
-    fi
-    return 0
-}
-
-export_json_file() {
-    local db
-    local file_json
-    local export_query
-    declare -a cmd
-    local time_start
-    local time_stop
-
-    db=$1
-    file_json=$2
-    time_start="$(TZ=UTC date -I)T00:00:00"
-    time_stop="$(TZ=UTC date -I)T23:59:59"
-    read -r -d '' export_query <<-EOF || true
-        select did, cid,
-        json_extract(feedpost, '$.createdAt') as created_at,
-        json_extract(feedpost, '$.text') as text
-        from posts
-        where created_at >= '$time_start'
-        and created_at <= '$time_stop'
-        and (
-            json_extract(feedpost, '$.langs') = '["en"]'
-            or json_extract(feedpost, '$.langs') = ''
-            or json_extract(feedpost, '$.langs') is null
-        )
-        order by rowid
-EOF
-
-    cmd+=(sqlite3 -readonly -json)
-    cmd+=("$db")
-    # cmd+=("select json_extract(feedpost, '$.did') as did, json_extract(feedpost, '$.cid') as cid, json_extract(feedpost, '$.feedpost.createdAt') as created_at, json_extract(feedpost, '$.feedpost.text') as text from posts where json_extract(feedpost, '$.feedpost.createdAt') >= '$time_start' and json_extract(feedpost, '$.feedpost.createdAt') <= '$time_stop' and json_extract(feedpost, '$.feedpost.langs') = '[\"en\"]' order by rowid")
-    cmd+=("${export_query}")
-
-    "${cmd[@]}" > "$file_json"
-}
-
-import_json() {
-    local file_json
-    local file_duck
-    local file_duck_tmp
-    local partial_lines
-    local schema_query
-    local insert_query
-    declare -a args
-
-    # parse options
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            "--partial")
-                shift
-                partial_lines=$1
-                shift
-                ;;
-            *)
-                args+=("$1")
-                shift
-                ;;
-        esac
-    done
-
-    file_json="${args[0]}"
-    file_duck="${args[1]}"
-    file_duck_tmp="${args[2]}"
-
-    # look for previously created database with schema
-    require_file "${file_duck_tmp}"
-
-    # partail import
-    if (( partial_lines > 0 )); then
-        file_json_partial="${file_json}.partial"
-
-        printf "reading last %s lines from %s ... " "${partial_lines}" "${file_json}"
-        if tail -n "${partial_lines}" "${file_json}" > "${file_json_partial}"; then
-            # use partial file
-            file_json="${file_json_partial}"
-        fi
-    fi
-    # sample entire file before processing to avoid any unexpected fields
-    # insert_query=$(printf "insert into posts select * from read_json('%s', sample_size = -1)" "${file_json}")
-    insert_query=$(printf "insert into posts select did, cid, created_at, text from read_json_auto('%s')" "${file_json}")
-    if ! duckdb "${file_duck_tmp}" "${insert_query}" >/dev/null; then
-        printf "insert_query: %s\n" "${insert_query}"
-        return 1
-    fi
-    # replace old file
-    mv "${file_duck_tmp}" "${file_duck}"
+    "${cmd[@]}" < <(printf "%s" "$build_query") >/dev/null
 }
 
 file_info() {
@@ -198,6 +87,7 @@ file_info() {
     done
 }
 
+# create fts index
 fts_index() {
     local file_duck
     local cmd
@@ -207,8 +97,17 @@ fts_index() {
     duckdb "${file_duck}" "${cmd}"
 }
 
+# drop existing fts index
+fts_drop() {
+    local file_duck
+    file_duck=$1
+
+    duckdb "${file_duck}" "pragma drop_fts_index(posts)"
+}
+
 usage() {
-    printf "%s [datetime_start] [datetime_start]\n" "${SCRIPT_NAME}"
+    printf "%s [input.sqlite3]\n" "${SCRIPT_NAME}"
+    printf "  --append  Append to existing duck database\n"
     exit 1
 }
 
@@ -220,14 +119,13 @@ for arg in "$@"; do
 done
 
 declare -a args
-partial_lines=0
+append=1 ; is_append() { return $append; } # false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        "--partial")
+        "--append")
             shift
-            partial_lines=$1
-            shift
+            append=0
             ;;
         *)
             args+=("$1")
@@ -238,11 +136,10 @@ done
 
 require_bin duckdb
 
-sqlite_source="data/jetstream.sqlite3"
-duckdb_dest="data/jetstream.duckdb"
-duckdb_dest_tmp="data/jetstream.duckdb.tmp"
-time_start=${args[0]:-"$(TZ=UTC date -I)T00:00:00"}
-time_stop=${args[1]:-"$(TZ=UTC date -I)T23:59:59"}
+duckdb_dest="${args[0]:-data/jetstream.duckdb}"
+duckdb_dest_tmp="${duckdb_dest}.tmp"
+# time_start=${args[0]:-"$(TZ=UTC date -I)T00:00:00"}
+# time_stop=${args[1]:-"$(TZ=UTC date -I)T23:59:59"}
 
 printf "%s starting build\n" "$(TZ=UTC date)"
 
@@ -251,25 +148,55 @@ if [[ -f "$duckdb_dest_tmp" ]]; then
     rm "$duckdb_dest_tmp" &>/dev/null
 fi
 
-printf "building database from sqlite ... "
-if ! build_from_sqlite "${sqlite_source}" "${duckdb_dest_tmp}" "${time_start}" "${time_stop}"; then
-    printf "error\n"
-    exit 1
+if is_append; then
+    # no temporary file
+    duckdb_dest_tmp=$duckdb_dest
+    printf "appending to database %s\n" "$duckdb_dest"
+else
+    printf "building new database %s\n" "$duckdb_dest"
 fi
-printf "ok\n"
 
-printf "implementing fts ... "
-if ! fts_index "${duckdb_dest_tmp}"; then
-    printf "error\n"
-    exit 1
-fi
-printf "ok\n"
+# iterate through sqlite files to import
+for sqlite_db in "${args[@]:1}"; do
+    printf "%s ... " "$sqlite_db"
 
-printf "replacing old database ... "
-if ! mv "${duckdb_dest_tmp}" "${duckdb_dest}"; then
-    printf "error\n"
-    exit 1
+    if ! build_from_sqlite "${duckdb_dest_tmp}" "${sqlite_db}"; then
+        printf "error\n"
+        exit 1
+    fi
+    printf "ok\n"
+done
+
+if is_append; then
+    printf "dropping existing fts index ... "
+    if ! fts_drop "${duckdb_dest_tmp}"; then
+        printf "error\n"
+        exit 1
+    fi
+    printf "ok\n"
+
+    printf "implementing fts ... "
+    if ! fts_index "${duckdb_dest_tmp}" true; then
+        printf "error\n"
+        exit 1
+    fi
+    printf "ok\n"
+else
+    printf "implementing fts ... "
+    if ! fts_index "${duckdb_dest_tmp}"; then
+        printf "error\n"
+        exit 1
+    fi
+    printf "ok\n"
 fi
-printf "ok\n"
+
+if ! is_append; then
+    printf "replacing database ... "
+    if ! mv "${duckdb_dest_tmp}" "${duckdb_dest}"; then
+        printf "error\n"
+        exit 1
+    fi
+    printf "ok\n"
+fi
 
 printf "%s build complete\n" "$(TZ=UTC date)"
