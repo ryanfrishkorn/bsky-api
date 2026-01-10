@@ -10,12 +10,12 @@ analyze_term() {
     local query
     local term
 
-    cmd+=(duckdb -json "$database")
+    cmd+=(duckdb -readonly -json "$database")
     term=$1
 
     read -r -d '' query <<-SQL || true
         set timezone = 'UTC';
-        select distinct p.created_at as created_at, a.term, a.termid, b.docid, c.name, p.text
+        select distinct on (p.cid) p.created_at, substr(p.created_at::VARCHAR, 0, 20) as ts, a.term, a.termid, b.docid, c.name, p.did, p.cid, p.text
         from fts_main_posts.dict as a
         inner join fts_main_posts.terms as b on a.termid = b.termid
         inner join fts_main_posts.docs as c on b.docid = c.docid
@@ -26,7 +26,6 @@ analyze_term() {
         order by p.created_at desc;
 SQL
 
-    # printf "query: %s\n" "$query" 1>&2
     "${cmd[@]}" < <(printf "%s" "$query")
 }
 
@@ -52,9 +51,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 if (( ${#args[@]} != 1 )); then
-    # printf "args: %s\n" "${args[@]}"
     usage
 fi
 
 term=${args[0]}
-analyze_term "$term" | jq -c '.[] | { created_at, text }'
+analyze_term "$term" | jq -c '.[] | { ts, text }'
