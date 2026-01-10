@@ -41,7 +41,7 @@ impl Task {
             Process::BuildDuckDb => Self {
                 process,
                 cmd: "./scripts/build-duckdb".to_string(),
-                args: ["data/jetstream.json", "data/jetstream.duckdb"]
+                args: ["data/jetstream.duckdb", "data/jetstream.sqlite3"]
                     .iter_mut()
                     .map(|x| x.to_string())
                     .collect(),
