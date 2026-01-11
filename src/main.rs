@@ -165,12 +165,13 @@ async fn search(
         .expect("setting scalar_subquery configuration");
 
     info!("searching for term: {}", term);
+
     let mut query = r#"
-        select distinct(fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0)) as score, did, cid, created_at::VARCHAR, text
+        select fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score, did, cid, created_at::VARCHAR, text
         from posts
-        where fts_main_posts.match_bm25(cid, ?, fields := 'text', k := 1.2, b := 0.75, conjunctive := 0) is not null
-        and score >= 2.0
+        where score >= 2.0
     "#.trim().to_string();
+
     query = match order_field.as_str() {
         "created_at" => format!("{} {}", query, "order by created_at desc"),
         _ => format!("{} {}", query, "order by score desc"),
@@ -194,7 +195,7 @@ async fn search(
         .expect("logged error");
 
     let posts_iter = stmt
-        .query_map([&term, &term, &query_limit], |row| {
+        .query_map([&term, &query_limit], |row| {
             Ok(Post {
                 score: row.get(0)?,
                 did: row.get(1)?,
