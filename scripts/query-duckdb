@@ -5,7 +5,7 @@
 set -eo pipefail
 
 DATABASE="${HOME}/.jetstream.duckdb"
-OUTPUT_JSON=1; cfg_json() { return $OUTPUT_JSON; }
+OUTPUT_LIST=1 ; cfg_list() { return $OUTPUT_LIST; }
 declare -a ARGS
 
 # Script Function List
@@ -72,19 +72,21 @@ run-query() {
     query="$(printf "set time zone 'UTC'; %s" "$query")"
 
     cmd+=(duckdb -readonly)
-    # optional json output
-    if cfg_json; then
-        cmd+=(-json)
-    else
+    # optional list output
+    if cfg_list; then
         cmd+=(-list)
+    else
+        # default json output
+        cmd+=(-json)
     fi
     cmd+=("$DATABASE")
 
     # use jq if json output
-    if cfg_json; then
-        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
-    else
+    if cfg_list; then
         "${cmd[@]}" < <(printf "%s\n" "$query")
+    else
+        # use jq for compact single-line item format
+        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
     fi
 }
 
@@ -106,9 +108,9 @@ for arg in "$@"; do
             shift
             usage
             ;;
-        --json)
+        --list)
             shift
-            OUTPUT_JSON=0 # true
+            OUTPUT_LIST=0 # true
             ;;
         *)
             ARGS+=("$arg")
