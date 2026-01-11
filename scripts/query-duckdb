@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# DuckDB Query Notes
+
+set -eo pipefail
+
+DATABASE="${HOME}/.jetstream.duckdb"
+OUTPUT_JSON=1; cfg_json() { return $OUTPUT_JSON; }
+declare -a ARGS
+
+# Script Function List
+usage() {
+    printf "script functions:\n"
+    printf "  common-terms  Show most common terms and stats from FTS index\n"
+    printf "  search        Search for posts using FTS match for term\n"
+    exit 1
+}
+
+# Functions
+
+# Use FTS match for supplied term
+search() {
+    local query
+    local term
+
+    term=$1
+    require-arg "$term"
+
+    read -r -d '' query <<-SQL || true
+    select
+        fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score,
+        created_at,
+        text
+    from posts
+    where score not null
+    order by score desc
+    limit 10000;
+SQL
+
+    run-query "$query"
+}
+
+# Show most common stems using fts index
+common-terms() {
+    local query
+
+    read -r -d '' query <<-SQL || true
+        select count, s.termid, t.term
+        from (
+            select count() as count,
+            termid from fts_main_posts.terms
+            group by termid
+        ) as s
+        inner join fts_main_posts.dict as t
+        on t.termid = s.termid
+        order by count desc
+        limit 40;
+SQL
+
+    run-query "$query"
+}
+
+# Execute duckdb query
+run-query() {
+    declare -a cmd
+    local query
+
+    query=$1
+    require-arg "$query"
+
+    # prepend timezone set
+    query="$(printf "set time zone 'UTC'; %s" "$query")"
+
+    cmd+=(duckdb -readonly)
+    # optional json output
+    if cfg_json; then
+        cmd+=(-json)
+    else
+        cmd+=(-list)
+    fi
+    cmd+=("$DATABASE")
+
+    # use jq if json output
+    if cfg_json; then
+        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
+    else
+        "${cmd[@]}" < <(printf "%s\n" "$query")
+    fi
+}
+
+# Utility Functions
+require-arg() {
+    if [[ -z $1 ]]; then
+        printf "required argument missing\n" 1>&2
+        return 1
+    fi
+    return 0
+}
+
+# Function Invocations
+
+# Check options
+for arg in "$@"; do
+    case $arg in
+        --help|-h)
+            shift
+            usage
+            ;;
+        --json)
+            shift
+            OUTPUT_JSON=0 # true
+            ;;
+        *)
+            ARGS+=("$arg")
+            shift
+            ;;
+    esac
+done
+
+"${ARGS[@]}"
