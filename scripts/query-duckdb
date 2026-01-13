@@ -20,21 +20,50 @@ usage() {
 
 # Use FTS match for supplied term
 search() {
+    local term # $1
+    local limit ; limit=100000
+    local order_clause
     local query
-    local term
+    local sort_time ; sort_time=0
+    declare -a args
 
-    term=$1
+    while (( $# > 0 )); do
+        case $1 in
+            --limit)
+                shift
+                limit=$1
+                ;;
+            --time)
+                shift
+                sort_time=1
+                ;;
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    term="${args[0]}"
     require-arg "$term"
+
+    if ((sort_time)); then
+        order_clause="order by created_at desc"
+    else
+        order_clause="order by score desc"
+    fi
 
     read -r -d '' query <<-SQL || true
     select
+        substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as s,
         fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score,
-        created_at,
+        substr(created_at::VARCHAR, 0, 17) as ts,
+        substr(did, 9) as did,
         text
     from posts
     where score not null
-    order by score desc
-    limit 10000;
+    $order_clause
+    limit $limit;
 SQL
 
     run-query "$query"
@@ -86,7 +115,7 @@ run-query() {
         "${cmd[@]}" < <(printf "%s\n" "$query")
     else
         # use jq for compact single-line item format
-        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
+        jq -c '.[] | { ts, did, s, text }' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
     fi
 }
 
