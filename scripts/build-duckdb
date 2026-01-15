@@ -106,10 +106,12 @@ fts_drop() {
 }
 
 usage() {
-    printf "%s [input.sqlite3]\n" "${SCRIPT_NAME}"
+    printf "%s <output.duckdb> <input.sqlite3>\n" "${SCRIPT_NAME}"
     printf "  --append  Append to existing duck database\n"
     exit 1
 }
+
+# Begin script logic
 
 # check for help args
 for arg in "$@"; do
@@ -119,13 +121,16 @@ for arg in "$@"; do
 done
 
 declare -a args
-append=1 ; is_append() { return $append; } # false
+append=1    ; cfg_append()    { return $append; }    # default false
+build_fts=0 ; cfg_build_fts() { return $build_fts; } # default true
+drop_fts=1  ; cfg_drop_fts()  { return $drop_fts; }  # default false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         "--append")
             shift
-            append=0
+            append=0   # true
+            drop_fts=0
             ;;
         *)
             args+=("$1")
@@ -136,7 +141,7 @@ done
 
 require_bin duckdb
 
-duckdb_dest="${args[0]:-data/jetstream.duckdb}"
+duckdb_dest="${args[0]}"
 duckdb_dest_tmp="${duckdb_dest}.tmp"
 # time_start=${args[0]:-"$(TZ=UTC date -I)T00:00:00"}
 # time_stop=${args[1]:-"$(TZ=UTC date -I)T23:59:59"}
@@ -148,7 +153,13 @@ if [[ -f "$duckdb_dest_tmp" ]]; then
     rm "$duckdb_dest_tmp" &>/dev/null
 fi
 
-if is_append; then
+if cfg_append; then
+    # ensure database to be appended to exists
+    if ! [[ -f "$duckdb_dest" ]]; then
+        printf "destination database for append not found: %s\n" "$duckdb_dest"
+        exit 1
+    fi
+
     # no temporary file
     duckdb_dest_tmp=$duckdb_dest
     printf "appending to database %s\n" "$duckdb_dest"
@@ -167,13 +178,15 @@ for sqlite_db in "${args[@]:1}"; do
     printf "ok\n"
 done
 
-if is_append; then
-    printf "dropping existing fts index ... "
-    if ! fts_drop "${duckdb_dest_tmp}"; then
-        printf "error\n"
-        exit 1
+if cfg_build_fts; then
+    if cfg_drop_fts; then
+        printf "dropping existing fts index ... "
+        if ! fts_drop "${duckdb_dest_tmp}"; then
+            printf "error\n"
+            exit 1
+        fi
+        printf "ok\n"
     fi
-    printf "ok\n"
 
     printf "implementing fts ... "
     if ! fts_index "${duckdb_dest_tmp}" true; then
@@ -181,16 +194,9 @@ if is_append; then
         exit 1
     fi
     printf "ok\n"
-else
-    printf "implementing fts ... "
-    if ! fts_index "${duckdb_dest_tmp}"; then
-        printf "error\n"
-        exit 1
-    fi
-    printf "ok\n"
 fi
 
-if ! is_append; then
+if ! cfg_append; then
     printf "replacing database ... "
     if ! mv "${duckdb_dest_tmp}" "${duckdb_dest}"; then
         printf "error\n"

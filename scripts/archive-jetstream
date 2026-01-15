@@ -51,7 +51,7 @@ build_dest_filename() {
     prefix=$1
 
     prefix_nice="$(dashes_to_dots "$prefix")"
-    printf "data/jetstream-%s.sqlite3" "$prefix_nice"
+    printf "data/archive/jetstream-%s.sqlite3" "$prefix_nice"
 }
 
 prefix_today() {

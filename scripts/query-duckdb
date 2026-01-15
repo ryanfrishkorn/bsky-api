@@ -5,18 +5,62 @@
 set -eo pipefail
 
 DATABASE="${HOME}/.jetstream.duckdb"
-OUTPUT_LIST=1 ; cfg_list() { return $OUTPUT_LIST; }
+OUTPUT_LIST=0 # false
 declare -a ARGS
 
 # Script Function List
 usage() {
     printf "script functions:\n"
-    printf "  common-terms  Show most common terms and stats from FTS index\n"
-    printf "  search        Search for posts using FTS match for term\n"
+    printf "  common-terms         Show most common terms and stats from FTS index\n"
+    printf "  search       <term>  Search for posts using FTS match for term\n"
+    printf "  histogram    <term>  Create histogram for supplied term\n"
+    printf "    --ago             <24 hours>    Set starting time\n"
+    printf "    --bucket-interval <1 hour>  Set bucket interval\n"
     exit 1
 }
 
 # Functions
+
+histogram() {
+    local ago; ago="24 hours"
+    local bucket_interval; bucket_interval="1 hour"
+    local term
+    local query
+    declare -a args
+
+    while (($# > 0)); do
+        case $1 in
+            --ago)
+                ago=$2
+                shift 2
+                ;;
+            --bucket-interval)
+                bucket_interval=$2
+                shift 2
+                ;;
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+    term=${args[0]}
+    require-arg "$term"
+
+    read -r -d '' query <<-SQL || true
+        select time_bucket(interval '$bucket_interval', created_at) as bucket,
+            '$term' as term,
+            count(*) as msg_count
+        from posts
+        where created_at >= now() - interval '$ago'
+            and created_at < NOW()
+            and text ilike '%${term}%'
+        group by bucket
+        order by bucket;
+SQL
+
+    run-query "$query"
+}
 
 # Use FTS match for supplied term
 search() {
@@ -55,9 +99,8 @@ search() {
 
     read -r -d '' query <<-SQL || true
     select
-        substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as s,
-        fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score,
         substr(created_at::VARCHAR, 0, 17) as ts,
+        substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
         substr(did, 9) as did,
         text
     from posts
@@ -99,10 +142,11 @@ run-query() {
 
     # prepend timezone set
     query="$(printf "set time zone 'UTC'; %s" "$query")"
+    query="$(printf "%s" "$query")"
 
     cmd+=(duckdb -readonly)
     # optional list output
-    if cfg_list; then
+    if ((OUTPUT_LIST)); then
         cmd+=(-list)
     else
         # default json output
@@ -111,11 +155,11 @@ run-query() {
     cmd+=("$DATABASE")
 
     # use jq if json output
-    if cfg_list; then
+    if ((OUTPUT_LIST)); then
         "${cmd[@]}" < <(printf "%s\n" "$query")
     else
         # use jq for compact single-line item format
-        jq -c '.[] | { ts, did, s, text }' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
+        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
     fi
 }
 
@@ -137,9 +181,14 @@ for arg in "$@"; do
             shift
             usage
             ;;
+        --db)
+            shift
+            DATABASE=$1
+            shift
+            ;;
         --list)
             shift
-            OUTPUT_LIST=0 # true
+            OUTPUT_LIST=1
             ;;
         *)
             ARGS+=("$arg")
