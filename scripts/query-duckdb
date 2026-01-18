@@ -14,28 +14,28 @@ usage() {
     printf "  common-terms         Show most common terms and stats from FTS index\n"
     printf "  search       <term>  Search for posts using FTS match for term\n"
     printf "  histogram    <term>  Create histogram for supplied term\n"
-    printf "    --ago             <24 hours>    Set starting time\n"
-    printf "    --bucket-interval <1 hour>  Set bucket interval\n"
+    printf "    --start    <'24 hours'>  Set relative start time\n"
+    printf "    --interval <'1 hour'>    Set bucket interval size\n"
     exit 1
 }
 
 # Functions
 
 histogram() {
-    local ago; ago="24 hours"
-    local bucket_interval; bucket_interval="1 hour"
+    local start; start="24 hours"
+    local interval; interval="1 hour"
     local term
     local query
     declare -a args
 
     while (($# > 0)); do
         case $1 in
-            --ago)
-                ago=$2
+            --start)
+                start=$2
                 shift 2
                 ;;
-            --bucket-interval)
-                bucket_interval=$2
+            --interval)
+                interval=$2
                 shift 2
                 ;;
             *)
@@ -48,13 +48,13 @@ histogram() {
     require-arg "$term"
 
     read -r -d '' query <<-SQL || true
-        select time_bucket(interval '$bucket_interval', created_at) as bucket,
+        select time_bucket(interval '$interval', created_at) as bucket,
             '$term' as term,
             count(*) as msg_count
         from posts
-        where created_at >= now() - interval '$ago'
-            and created_at < NOW()
-            and text ilike '%${term}%'
+        where created_at >= now() - interval '$start'
+            and created_at < now()
+            and text ilike '% ${term} %'
         group by bucket
         order by bucket;
 SQL
@@ -65,7 +65,7 @@ SQL
 # Use FTS match for supplied term
 search() {
     local term # $1
-    local limit ; limit=100000
+    local limit ; limit=1000000
     local order_clause
     local query
     local sort_time ; sort_time=0
