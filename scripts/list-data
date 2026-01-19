@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
 
+data_dir="/Users/alphalux/bluerift/bsky-api/data"
+
 TZ=UTC date
+
+read -r storage_size _null < <(du -hs "$data_dir")
+printf "storage: %s\n" "$storage_size"
+
+printf "/data/ "
 TZ=UTC ls -lh data/
+
+printf "/data/archive/ "
+TZ=UTC ls -lh data/archive
