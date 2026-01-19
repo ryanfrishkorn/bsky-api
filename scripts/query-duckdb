@@ -12,14 +12,77 @@ declare -a ARGS
 usage() {
     printf "script functions:\n"
     printf "  common-terms         Show most common terms and stats from FTS index\n"
-    printf "  search       <term>  Search for posts using FTS match for term\n"
     printf "  histogram    <term>  Create histogram for supplied term\n"
     printf "    --start    <'24 hours'>  Set relative start time\n"
     printf "    --interval <'1 hour'>    Set bucket interval size\n"
+    printf "  reputation   <did>   Calculate reputation score for did based on post uniquness\n"
+    printf "  search       <term>  Search for posts using FTS match for term\n"
     exit 1
 }
 
 # Functions
+
+# Require argument $1 or exit
+require_arg() {
+    if [[ -z $1 ]]; then
+        printf "required argument missing\n" 1>&2
+        exit 1
+    fi
+    return 0
+}
+
+# Execute duckdb query
+run_query() {
+    declare -a cmd
+    local query
+
+    query=$1
+    require_arg "$query"
+
+    # prepend timezone set
+    query="$(printf "set time zone 'UTC'; %s" "$query")"
+    # query="$(printf "%s" "$query")"
+
+    cmd+=(duckdb -readonly)
+    # optional list output
+    if ((OUTPUT_LIST)); then
+        cmd+=(-list)
+    else
+        # default json output
+        cmd+=(-json)
+    fi
+    cmd+=("$DATABASE")
+
+    # use jq if json output
+    if ((OUTPUT_LIST)); then
+        "${cmd[@]}" < <(printf "%s\n" "$query")
+    else
+        # use jq for compact single-line item format
+        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
+    fi
+}
+
+# Subcommands
+
+# Show most common stems using fts index
+common-terms() {
+    local query
+
+    read -r -d '' query <<-SQL || true
+        select count, s.termid, t.term
+        from (
+            select count() as count,
+            termid from fts_main_posts.terms
+            group by termid
+        ) as s
+        inner join fts_main_posts.dict as t
+        on t.termid = s.termid
+        order by count desc
+        limit 40;
+SQL
+
+    run_query "$query"
+}
 
 histogram() {
     local start; start="24 hours"
@@ -45,7 +108,7 @@ histogram() {
         esac
     done
     term=${args[0]}
-    require-arg "$term"
+    require_arg "$term"
 
     read -r -d '' query <<-SQL || true
         select time_bucket(interval '$interval', created_at) as bucket,
@@ -59,7 +122,42 @@ histogram() {
         order by bucket;
 SQL
 
-    run-query "$query"
+    run_query "$query"
+}
+
+reputation() {
+    local did
+    local query
+    declare -a args
+
+    while (($# > 0)); do
+        case $1 in
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+    did="${args[0]}"
+    require_arg "$did"
+
+    # did = 'did:plc:dczjtzougy3jlyuwaclw4flv'
+    read -r -d '' query <<-SQL || true
+        with by_did as (
+            select count(*) as count, any_value(text)
+            from posts where did = '$did'
+        ),
+        by_text as (
+            select count(*) as count, any_value(text)
+            from posts where did = '$did'
+            group by text
+        )
+        select * from by_did
+        union all
+        select * from by_text order by count desc;
+SQL
+
+    run_query "$query"
 }
 
 # Use FTS match for supplied term
@@ -89,7 +187,7 @@ search() {
     done
 
     term="${args[0]}"
-    require-arg "$term"
+    require_arg "$term"
 
     if ((sort_time)); then
         order_clause="order by created_at desc"
@@ -109,67 +207,7 @@ search() {
     limit $limit;
 SQL
 
-    run-query "$query"
-}
-
-# Show most common stems using fts index
-common-terms() {
-    local query
-
-    read -r -d '' query <<-SQL || true
-        select count, s.termid, t.term
-        from (
-            select count() as count,
-            termid from fts_main_posts.terms
-            group by termid
-        ) as s
-        inner join fts_main_posts.dict as t
-        on t.termid = s.termid
-        order by count desc
-        limit 40;
-SQL
-
-    run-query "$query"
-}
-
-# Execute duckdb query
-run-query() {
-    declare -a cmd
-    local query
-
-    query=$1
-    require-arg "$query"
-
-    # prepend timezone set
-    query="$(printf "set time zone 'UTC'; %s" "$query")"
-    query="$(printf "%s" "$query")"
-
-    cmd+=(duckdb -readonly)
-    # optional list output
-    if ((OUTPUT_LIST)); then
-        cmd+=(-list)
-    else
-        # default json output
-        cmd+=(-json)
-    fi
-    cmd+=("$DATABASE")
-
-    # use jq if json output
-    if ((OUTPUT_LIST)); then
-        "${cmd[@]}" < <(printf "%s\n" "$query")
-    else
-        # use jq for compact single-line item format
-        jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
-    fi
-}
-
-# Utility Functions
-require-arg() {
-    if [[ -z $1 ]]; then
-        printf "required argument missing\n" 1>&2
-        return 1
-    fi
-    return 0
+    run_query "$query"
 }
 
 # Function Invocations
