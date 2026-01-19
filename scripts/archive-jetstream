@@ -74,7 +74,7 @@ prefix_yesterday() {
 }
 
 usage() {
-    printf "%s: [date_prefix]\n" "$SCRIPT_NAME"
+    printf "%s: [YYYY-MM-DD]\n" "$SCRIPT_NAME"
     exit 1
 }
 
@@ -85,6 +85,7 @@ fi
 # use yesterday's prefix
 # printf "prefix_today(): %s\n" "$(prefix_today)"
 # printf "prefix_yesterday(): %s\n" "$(prefix_yesterday)"
+TZ=UTC date
 
 archive_prefix="${1:-$(prefix_yesterday)}"
 db_src="data/jetstream.sqlite3"
@@ -94,3 +95,5 @@ printf "archiving all posts from %s ... " "$archive_prefix"
 if archive_day "$archive_prefix" "$db_src" "$db_dst"; then
     printf "ok\n"
 fi
+
+TZ=UTC date
