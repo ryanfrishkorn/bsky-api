@@ -6,17 +6,23 @@ set -eo pipefail
 
 DATABASE="${HOME}/.jetstream.duckdb"
 OUTPUT_LIST=0 # false
+VERBOSE=0 # false
 declare -a ARGS
 
 # Script Function List
 usage() {
-    printf "script functions:\n"
-    printf "  common-terms         Show most common terms and stats from FTS index\n"
-    printf "  histogram    <term>  Create histogram for supplied term\n"
+    printf "subcommands:\n"
+    printf "  common-terms               Show most common terms and stats from FTS index\n"
+    printf "  distribution <term>        Show dids and corresponding ordered match counts\n"
+    printf "    --start    <'24 hours'>  Set relative start time\n"
+    printf "  histogram    <term>        Create histogram for supplied term\n"
     printf "    --start    <'24 hours'>  Set relative start time\n"
     printf "    --interval <'1 hour'>    Set bucket interval size\n"
-    printf "  reputation   <did>   Calculate reputation score for did based on post uniquness\n"
-    printf "  search       <term>  Search for posts using FTS match for term\n"
+    printf "    --limit    <n>           Exclude accounts with more than <n> matching posts since start\n"
+    printf "  reputation   <did>         Calculate reputation score for did based on post uniquness\n"
+    printf "  search       <term>        Search for posts using FTS match for term\n"
+    printf "    --limit <n>              Limit results of search query\n"
+    printf "    --time                   Sort results by timestamp\n"
     exit 1
 }
 
@@ -84,15 +90,57 @@ SQL
     run_query "$query"
 }
 
-histogram() {
+distribution() {
     local start; start="24 hours"
-    local interval; interval="1 hour"
     local term
     local query
     declare -a args
 
     while (($# > 0)); do
         case $1 in
+            --start)
+                start=$2
+                shift 2
+                ;;
+            *)
+                args+=("$1")
+                shift
+                ;;
+        esac
+    done
+    term=${args[0]}
+    require_arg "$term"
+
+    read -r -d '' query <<-SQL || true
+        select did, count(*) as count
+        from posts
+        where created_at >= now() - interval '$start'
+            and created_at < now()
+            and text ilike '% ${term} %'
+        group by did
+        order by count
+SQL
+
+    if ((VERBOSE)); then
+        printf "%s\n" "$query"
+    fi
+    run_query "$query"
+}
+
+histogram() {
+    local start; start="24 hours"
+    local interval; interval="1 hour"
+    local match_limit; match_limit=10000 # large number default
+    local term
+    local query
+    declare -a args
+
+    while (($# > 0)); do
+        case $1 in
+            --limit)
+                match_limit=$2
+                shift 2
+                ;;
             --start)
                 start=$2
                 shift 2
@@ -111,17 +159,34 @@ histogram() {
     require_arg "$term"
 
     read -r -d '' query <<-SQL || true
+        with matching_posts as (
+            select *
+            from posts
+            where created_at >= now() - interval '$start'
+                and created_at < now()
+                and text ilike '% ${term} %'
+        ), did_exclude as (
+            select did, count(*) as exclude_count
+            from matching_posts
+            group by did
+        )
         select time_bucket(interval '$interval', created_at) as bucket,
             '$term' as term,
             count(*) as msg_count
-        from posts
-        where created_at >= now() - interval '$start'
-            and created_at < now()
-            and text ilike '% ${term} %'
+        from matching_posts
+        where did not in (
+            select did
+            from did_exclude
+            -- exclude accounts beyond this limit to avoid spam
+            where exclude_count > '$match_limit'
+        )
         group by bucket
         order by bucket;
 SQL
 
+    if ((VERBOSE)); then
+        printf "%s\n" "$query"
+    fi
     run_query "$query"
 }
 
@@ -143,18 +208,14 @@ reputation() {
 
     # did = 'did:plc:dczjtzougy3jlyuwaclw4flv'
     read -r -d '' query <<-SQL || true
-        with by_did as (
-            select count(*) as count, any_value(text)
-            from posts where did = '$did'
-        ),
-        by_text as (
-            select count(*) as count, any_value(text)
+        with all_posts as (
+            select count(*) as count, text
             from posts where did = '$did'
             group by text
         )
-        select * from by_did
-        union all
-        select * from by_text order by count desc;
+        select '$did' as did, count, text
+        from all_posts
+        order by count
 SQL
 
     run_query "$query"
@@ -228,6 +289,10 @@ for arg in "$@"; do
             shift
             OUTPUT_LIST=1
             ;;
+        -v|--verbose)
+            shift
+            VERBOSE=1
+            ;;
         *)
             ARGS+=("$arg")
             shift
@@ -235,4 +300,10 @@ for arg in "$@"; do
     esac
 done
 
+# require subcommand
+if ((${#ARGS[@]} < 1)); then
+    usage
+fi
+
+# invoke corresponding function
 "${ARGS[@]}"
