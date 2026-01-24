@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -ueo pipefail
+
+# global vars
+declare -a args
+program_name="$(basename "$0")"
+period=3d
+
+usage() {
+    printf "usage: %s <term>\n" "$program_name"
+    exit 1
+}
+
+remove_existing() {
+    if [[ -f "$1" ]]; then
+        rm "$1"
+    fi
+}
+
+rrd_create() {
+    remove_existing "$rrd_output"
+    # subtract additional minute when calculating start time to compensate for data query time
+    TZ=UTC rrdtool create "$rrd_output" \
+    --start now-"${period}"-1m \
+    --step 60 \
+    DS:count:GAUGE:120:0:U \
+    RRA:AVERAGE:0.5:1:44640 # max datapoints stored (31 days at 1 minute intervals)
+}
+
+rrd_graph() {
+    TZ=UTC rrdtool graph "$rrd_graph" \
+    --start now-"${period}" \
+    --end now \
+    --title "BlueSky Term: '$term'" \
+    --vertical-label "posts / minute" \
+    --width 1280 \
+    --height 300 \
+    DEF:count="$rrd_output":count:AVERAGE \
+    LINE1:count#0000FF:"$term"
+}
+
+rrd_update() {
+    # rrdtool update "$rrd_output" "${ts}:${connections}"
+    # shellcheck disable=SC2059
+    rrdtool update "$rrd_output" "$@"
+}
+
+while (($# > 0)); do
+    case $1 in
+        --help|-h)
+            usage
+            ;;
+        --period)
+            period=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+term="${args[0]}"
+
+# require term name
+if [[ -z $term ]]; then
+    usage
+fi
+
+# assign filenames
+rrd_graph=$(printf "%s" "${HOME}/tmp/${term}.png" | sed 's/ /_/g')
+rrd_output=$(printf "%s" "${HOME}/tmp/${term}.rrd" | sed 's/ /_/g')
+
+# create database
+rrd_create "$term"
+
+# populate database via data iteration
+mapfile -t series_data < /dev/stdin
+rrd_update "${series_data[@]}"
+
+# while read -r series_data; do
+#     rrd_update "$series_data"
+# done
+
+rrd_graph

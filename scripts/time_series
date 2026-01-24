@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+script_name=$(basename "$0")
+
+declare -a args
+period="14 days"
+interval="24 hours"
+
+usage() {
+    printf "%s <term>\n" "$script_name"
+    printf "  --interval <str>  specify bucket interval [%s]\n" "$interval"
+    printf "  --period   <str>  specify time period     [%s]\n" "$period"
+    exit 1
+}
+
+# output filter to create rrdtool compatible csv
+rrd_output() {
+    jq -rc '.[] | { ts, msg_count } | [.[]] | @csv' | sed 's/\.0,/:/g'
+}
+
+while (($# > 0)); do
+    case $1 in
+        --help|-h)
+            usage
+            ;;
+        --interval)
+            interval=$2
+            shift 2
+            ;;
+        --period)
+            period=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+declare -a cmd
+term=${args[0]}
+
+if [[ -z $term ]]; then
+    usage
+fi
+
+read -r -d '' query <<-SQL || true
+    with all_buckets as (
+        select unnest(
+            generate_series(
+                time_bucket(interval '$interval', now() - interval '$period'),
+                time_bucket(interval '$interval', now()),
+                interval '$interval'
+            )
+        )
+        as bucket
+    ),
+    counts as (
+        select time_bucket(interval '$interval', created_at::TIMESTAMP) as bucket, count(*) as msg_count
+        from posts
+        where regexp_matches(text, '\b$term\b', 'i')
+        group by bucket
+    )
+    select epoch(ab.bucket) as ts, ab.bucket, coalesce(c.msg_count, 0) as msg_count
+    from all_buckets ab
+    left join counts c on ab.bucket = c.bucket
+    order by ab.bucket;
+SQL
+
+cmd+=(duckdb -readonly -json)
+cmd+=("data/jetstream.duckdb")
+
+"${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output
