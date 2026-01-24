@@ -6,6 +6,7 @@ set -ueo pipefail
 declare -a args
 declare -a cmd_time_series
 
+output_dir="${HOME}/tmp"
 script_name="$(basename "$0")"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 interval='1 minute'
@@ -126,8 +127,8 @@ if [[ -z $term ]]; then
 fi
 
 # assign filenames
-rrd_output_graph=$(printf "%s" "${HOME}/tmp/${term}.png" | sed 's/ /_/g')
-rrd_output_db=$(printf "%s" "${HOME}/tmp/${term}.rrd" | sed 's/ /_/g')
+rrd_output_graph=$(printf "%s" "${output_dir}/${term}.png" | sed 's/ /_/g')
+rrd_output_db=$(printf "%s" "${output_dir}/${term}.rrd" | sed 's/ /_/g')
 
 # create database
 rrd_create "$rrd_output_db" "$period"
