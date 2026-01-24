@@ -147,3 +147,6 @@ mapfile -t series_data < <("${cmd_time_series[@]}")
 # update values and graph
 rrd_update "$rrd_output_db" "${series_data[@]}"
 rrd_graph "$rrd_output_db" "$rrd_output_graph"
+
+# remove output database
+rm "$rrd_output_db"
