@@ -3,6 +3,7 @@
 script_name=$(basename "$0")
 
 declare -a args
+db="${HOME}/bluerift/bsky-api/data/jetstream.duckdb"
 period="1 day"
 interval="1 minute"
 rrd_output=0 # false
@@ -75,7 +76,8 @@ read -r -d '' query <<-SQL || true
 SQL
 
 cmd+=(duckdb -readonly -json)
-cmd+=("data/jetstream.duckdb")
+# cmd+=("data/jetstream.duckdb")
+cmd+=("$db")
 
 if ((rrd_output)); then
     "${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output

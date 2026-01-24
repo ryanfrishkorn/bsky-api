@@ -8,7 +8,8 @@ declare -a cmd_time_series
 
 output_dir="${HOME}/tmp"
 script_name="$(basename "$0")"
-script_dir="$(cd "$(dirname "$0")" && pwd)"
+# script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_dir="${HOME}/bluerift/bsky-api/scripts"
 interval='1 minute'
 period='1 day'
 
