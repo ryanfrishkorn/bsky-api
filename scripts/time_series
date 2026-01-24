@@ -3,8 +3,8 @@
 script_name=$(basename "$0")
 
 declare -a args
-period="14 days"
-interval="24 hours"
+period="1 day"
+interval="1 minute"
 
 usage() {
     printf "%s <term>\n" "$script_name"

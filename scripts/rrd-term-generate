@@ -5,7 +5,7 @@ set -ueo pipefail
 # global vars
 declare -a args
 program_name="$(basename "$0")"
-period=3d
+period=1d
 
 usage() {
     printf "usage: %s <term>\n" "$program_name"
@@ -29,6 +29,7 @@ rrd_create() {
 }
 
 rrd_graph() {
+    date_str=$(TZ=UTC date | sed 's/:/\\:/g') # escape colons
     TZ=UTC rrdtool graph "$rrd_graph" \
     --start now-"${period}" \
     --end now \
@@ -37,7 +38,8 @@ rrd_graph() {
     --width 1280 \
     --height 300 \
     DEF:count="$rrd_output":count:AVERAGE \
-    LINE1:count#0000FF:"$term"
+    LINE1:count#0000FF:"$term" \
+    COMMENT:"generated $date_str"
 }
 
 rrd_update() {
