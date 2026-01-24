@@ -5,11 +5,13 @@ script_name=$(basename "$0")
 declare -a args
 period="1 day"
 interval="1 minute"
+rrd_output=0 # false
 
 usage() {
     printf "%s <term>\n" "$script_name"
     printf "  --interval <str>  specify bucket interval [%s]\n" "$interval"
     printf "  --period   <str>  specify time period     [%s]\n" "$period"
+    printf "  --rrd             output format for rrdtool\n"
     exit 1
 }
 
@@ -30,6 +32,10 @@ while (($# > 0)); do
         --period)
             period=$2
             shift 2
+            ;;
+        --rrd)
+            shift
+            rrd_output=1 # true
             ;;
         *)
             args+=("$1")
@@ -71,4 +77,8 @@ SQL
 cmd+=(duckdb -readonly -json)
 cmd+=("data/jetstream.duckdb")
 
-"${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output
+if ((rrd_output)); then
+    "${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output
+else
+    "${cmd[@]}" < <(printf "%s\n" "$query")
+fi

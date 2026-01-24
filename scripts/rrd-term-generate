@@ -4,11 +4,17 @@ set -ueo pipefail
 
 # global vars
 declare -a args
-program_name="$(basename "$0")"
-period=1d
+declare -a cmd_time_series
+
+script_name="$(basename "$0")"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+interval='1 minute'
+period='1 day'
 
 usage() {
-    printf "usage: %s <term>\n" "$program_name"
+    printf "%s <term>\n" "$script_name"
+    printf "  --interval <str>  specify bucket interval [%s]\n" "$interval"
+    printf "  --period   <str>  specify time period     [%s]\n" "$period"
     exit 1
 }
 
@@ -19,39 +25,86 @@ remove_existing() {
 }
 
 rrd_create() {
-    remove_existing "$rrd_output"
+    local db
+    db=$1
+
+    remove_existing "$db"
     # subtract additional minute when calculating start time to compensate for data query time
-    TZ=UTC rrdtool create "$rrd_output" \
-    --start now-"${period}"-1m \
+    TZ=UTC rrdtool create "$db" \
+    --start now-"${period_rrd}"-1m \
     --step 60 \
     DS:count:GAUGE:120:0:U \
     RRA:AVERAGE:0.5:1:44640 # max datapoints stored (31 days at 1 minute intervals)
 }
 
 rrd_graph() {
+    local date_str
+    local db
+    local output
+    db=$1
+    output=$2
+
+    if [[ -z $db ]] || [[ -z $output ]]; then
+        return 1
+    fi
+
     date_str=$(TZ=UTC date | sed 's/:/\\:/g') # escape colons
-    TZ=UTC rrdtool graph "$rrd_graph" \
-    --start now-"${period}" \
+    TZ=UTC rrdtool graph "$output" \
+    --start now-"${period_rrd}" \
     --end now \
     --title "BlueSky Term: '$term'" \
     --vertical-label "posts / minute" \
     --width 1280 \
     --height 300 \
-    DEF:count="$rrd_output":count:AVERAGE \
+    DEF:count="$db":count:AVERAGE \
     LINE1:count#0000FF:"$term" \
     COMMENT:"generated $date_str"
 }
 
 rrd_update() {
+    local db
+    db=$1
+    shift
+
+    if [[ -z $db ]]; then
+        return 1
+    fi
+
     # rrdtool update "$rrd_output" "${ts}:${connections}"
-    # shellcheck disable=SC2059
-    rrdtool update "$rrd_output" "$@"
+    rrdtool update "$db" "$@"
+}
+
+# Converts a DuckDB INTERVAL type '3 hours' to rrdtool format '3h'
+to_rrd_period() {
+    local phrase
+    phrase=$1
+
+    local num
+    local unit
+
+    if [[ -z $phrase ]]; then
+        return 1
+    fi
+
+    if [[ $phrase =~ ^[0-9]+\ +[a-zA-Z]+$ ]]; then
+        num=$(printf "%s" "$phrase" | grep -Eo '^[0-9]+')
+        unit=$(printf "%s" "$phrase" | grep -Eo '[a-zA-Z]+$')
+        first_letter=${unit:0:1}
+        # printf "num: '%s' unit: '%s'\n" "$num" "$unit"
+        printf "%s%s\n" "$num" "$first_letter"
+        return 0
+    fi
+    return 1
 }
 
 while (($# > 0)); do
     case $1 in
         --help|-h)
             usage
+            ;;
+        --interval)
+            interval=$2
+            shift 2
             ;;
         --period)
             period=$2
@@ -65,6 +118,7 @@ while (($# > 0)); do
 done
 
 term="${args[0]}"
+period_rrd="$(to_rrd_period "$period")"
 
 # require term name
 if [[ -z $term ]]; then
@@ -72,18 +126,22 @@ if [[ -z $term ]]; then
 fi
 
 # assign filenames
-rrd_graph=$(printf "%s" "${HOME}/tmp/${term}.png" | sed 's/ /_/g')
-rrd_output=$(printf "%s" "${HOME}/tmp/${term}.rrd" | sed 's/ /_/g')
+rrd_output_graph=$(printf "%s" "${HOME}/tmp/${term}.png" | sed 's/ /_/g')
+rrd_output_db=$(printf "%s" "${HOME}/tmp/${term}.rrd" | sed 's/ /_/g')
 
 # create database
-rrd_create "$term"
+rrd_create "$rrd_output_db" "$period"
+
+# invoke `time_series` script in the same directory
+cmd_time_series+=("$script_dir/time_series")
+cmd_time_series+=(--interval "$interval")
+cmd_time_series+=(--period "$period")
+cmd_time_series+=(--rrd)
+cmd_time_series+=("$term")
 
 # populate database via data iteration
-mapfile -t series_data < /dev/stdin
-rrd_update "${series_data[@]}"
+mapfile -t series_data < <("${cmd_time_series[@]}")
 
-# while read -r series_data; do
-#     rrd_update "$series_data"
-# done
-
-rrd_graph
+# update values and graph
+rrd_update "$rrd_output_db" "${series_data[@]}"
+rrd_graph "$rrd_output_db" "$rrd_output_graph"
