@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -euo pipefail
 
 SCRIPT_NAME=$(basename "$0")
 
@@ -44,7 +44,7 @@ build_from_sqlite() {
     sqlite_source=$2
 
     # create schema
-    read -r -d '' create_query <<-SQL
+    read -r -d '' create_query <<-SQL || true
         create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, created_at TIMESTAMPTZ, text VARCHAR);
 SQL
     cmd=(duckdb "$duckdb_dest")
@@ -52,7 +52,7 @@ SQL
 
     cmd=(duckdb "$duckdb_dest")
 
-    read -r -d '' build_query <<-SQL
+    read -r -d '' build_query <<-SQL || true
         load sqlite;
         attach '$sqlite_source' as js (TYPE sqlite, READONLY true);
         insert or ignore into posts
@@ -93,7 +93,7 @@ fts_index() {
     local cmd
     file_duck=$1
 
-    cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 0)")
+    cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 1)")
     duckdb "${file_duck}" "${cmd}"
 }
 
@@ -179,15 +179,6 @@ for sqlite_db in "${args[@]:1}"; do
 done
 
 if cfg_build_fts; then
-    if cfg_drop_fts; then
-        printf "dropping existing fts index ... "
-        if ! fts_drop "${duckdb_dest_tmp}"; then
-            printf "error\n"
-            exit 1
-        fi
-        printf "ok\n"
-    fi
-
     printf "implementing fts ... "
     if ! fts_index "${duckdb_dest_tmp}" true; then
         printf "error\n"
