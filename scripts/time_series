@@ -69,7 +69,7 @@ read -r -d '' query <<-SQL || true
         where regexp_matches(text, '\b$term\b', 'i')
         group by bucket
     )
-    select epoch(ab.bucket) as ts, ab.bucket, coalesce(c.msg_count, 0) as msg_count
+    select epoch(ab.bucket) as ts, ab.bucket, '$term' as term, coalesce(c.msg_count, 0) as msg_count
     from all_buckets ab
     left join counts c on ab.bucket = c.bucket
     order by ab.bucket;
@@ -82,5 +82,5 @@ cmd+=("$db")
 if ((rrd_output)); then
     "${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output
 else
-    "${cmd[@]}" < <(printf "%s\n" "$query")
+    "${cmd[@]}" < <(printf "%s\n" "$query") | jq -c '.[] | { bucket, term, msg_count }'
 fi
