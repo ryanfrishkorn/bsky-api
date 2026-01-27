@@ -224,7 +224,8 @@ SQL
 # Use FTS match for supplied term
 search() {
     local term # $1
-    local limit ; limit=1000000
+    local interval ; interval='24 hours'
+    local limit ; limit=10000
     local order_clause
     local query
     local sort_time ; sort_time=0
@@ -232,9 +233,13 @@ search() {
 
     while (( $# > 0 )); do
         case $1 in
+            --interval)
+                interval=$2
+                shift 2
+                ;;
             --limit)
-                shift
-                limit=$1
+                limit=$2
+                shift 2
                 ;;
             --time)
                 shift
@@ -257,16 +262,37 @@ search() {
     fi
 
     read -r -d '' query <<-SQL || true
-    select
-        substr(created_at::VARCHAR, 0, 17) as ts,
-        substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
-        substr(did, 9) as did,
-        text
-    from posts
-    where score not null
-    $order_clause
-    limit $limit;
+        with all_posts as (
+            select * from posts
+            where created_at > now()::TIMESTAMP - interval '$interval'
+                and created_at < now()
+        ),
+        matching_posts as (
+            select
+                substr(created_at::VARCHAR, 0, 17) as ts,
+                substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
+                substr(did, 9) as did,
+                text
+            from all_posts
+            where score not null
+            $order_clause
+            limit $limit
+        )
+        select * from matching_posts
 SQL
+
+#     read -r -d '' query <<-SQL || true
+#     select
+#         substr(created_at::VARCHAR, 0, 17) as ts,
+#         substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
+#         substr(did, 9) as did,
+#         text
+#     from posts
+#     where score not null
+#     and created_at > now()::TIMESTAMP - interval '24 hours'
+#     $order_clause
+#     limit $limit;
+# SQL
 
     run_query "$query"
 }

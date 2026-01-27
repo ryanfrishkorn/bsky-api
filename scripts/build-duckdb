@@ -94,7 +94,7 @@ fts_index() {
     file_duck=$1
 
     cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 1)")
-    duckdb "${file_duck}" "${cmd}"
+    duckdb "${file_duck}" "${cmd}" &> /dev/null
 }
 
 # drop existing fts index

@@ -10,13 +10,13 @@ output_dir="${HOME}/tmp"
 script_name="$(basename "$0")"
 # script_dir="$(cd "$(dirname "$0")" && pwd)"
 script_dir="${HOME}/bluerift/bsky-api/scripts"
-interval='1 minute'
+interval='1 minute' # must be minutes for step calculation
 period='1 day'
 
 usage() {
     printf "%s <term>\n" "$script_name"
-    printf "  --interval <str>  specify bucket interval [%s]\n" "$interval"
-    printf "  --period   <str>  specify time period     [%s]\n" "$period"
+    printf "  --interval <str>  specify bucket interval (minutes only) [%s]\n" "$interval"
+    printf "  --period   <str>  specify time period                    [%s]\n" "$period"
     exit 1
 }
 
@@ -28,14 +28,21 @@ remove_existing() {
 
 rrd_create() {
     local db
+    local step
+    local heartbeat
+    local interval_minutes
     db=$1
+
+    interval_minutes=$(printf "%s" "$interval" | sed 's/ .*$//')
+    step=$((60 * interval_minutes))
+    heartbeat=$((step * 2))
 
     remove_existing "$db"
     # subtract additional minute when calculating start time to compensate for data query time
     TZ=UTC rrdtool create "$db" \
     --start now-"${period_rrd}"-1m \
-    --step 60 \
-    DS:count:GAUGE:120:0:U \
+    --step $step \
+    DS:count:GAUGE:"${heartbeat}":0:U \
     RRA:AVERAGE:0.5:1:44640 # max datapoints stored (31 days at 1 minute intervals)
 }
 
