@@ -76,7 +76,6 @@ read -r -d '' query <<-SQL || true
 SQL
 
 cmd+=(duckdb -readonly -json)
-# cmd+=("data/jetstream.duckdb")
 cmd+=("$db")
 
 if ((rrd_output)); then
