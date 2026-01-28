@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# define terms here
+mapfile -t terms <<'EOS'
+abolish ice
+alex pretti
+federal reserve
+fuck ice
+greenland
+grok
+ice murder
+jerome powell
+jonathan ross
+murder
+nato
+palantir
+renee good
+venezuela
+wind chill
+winter storm
+world war
+EOS
+
+output_dir="${HOME}/tmp/terms"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+interval='15 minutes'
+period='30 days'
+
+set -euo pipefail
+
+check_prelims() {
+    if ! [[ -d "$output_dir" ]]; then
+        printf "output_dir not present: %s\n" "$output_dir"
+        return 1
+    fi
+    return 0
+}
+
+build_html() {
+    declare -a cmd
+
+    cmd+=("${script_dir}/build-graphs-html")
+    "${cmd[@]}"
+}
+
+generate_graph() {
+    local term ; term=$1
+    declare -a cmd
+
+    if [[ -z $term ]]; then
+        printf "missing graph term argument\n" 1>&2
+        return 1
+    fi
+
+    cmd+=("${script_dir}/bsky-rrdgraph-term")
+    cmd+=(--output)
+    cmd+=("$output_dir")
+    cmd+=(--period)
+    cmd+=("$period")
+    cmd+=(--interval)
+    cmd+=("$interval")
+    cmd+=("$term")
+    
+    printf "generating '%s' ... " "$term"
+    if "${cmd[@]}" > /dev/null; then
+        printf "ok\n"
+        return 0
+    fi
+
+    printf "error\n" 1>&2
+    return 1
+}
+
+sync_files() {
+    declare -a cmd
+
+    cmd+=(rsync -a -q)
+    cmd+=(--delete)
+    cmd+=("$output_dir"/)
+    cmd+=("hashnix.club:~/public_html/terms/")
+
+    "${cmd[@]}"
+}
+
+# begin logic
+printf "%s build start\n" "$(TZ=UTC date)"
+
+if ! check_prelims; then
+    printf "missing preliminary configuration\n" 1>&2
+    exit 1
+fi
+
+for term in "${terms[@]}"; do
+    generate_graph "$term"
+done
+
+# build html
+printf "building html ... "
+if build_html; then
+    printf "ok\n"
+fi
+
+# rsync all items
+printf "syncing files ... "
+if sync_files; then
+    printf "ok\n"
+fi
+
+printf "%s build complete\n" "$(TZ=UTC date)"

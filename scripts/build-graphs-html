@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# script_dir="$(cd "$(dirname "$0")" && pwd)"
+ts="$(TZ=UTC date)"
+output_dir="${HOME}/tmp/terms"
+output_file="${output_dir}/index.html"
+
+read -r -d '' html_prefix <<-HTML
+<!DOCTYPE html>
+<html>
+    <title>BlueSky Terms</title>
+    <body>
+        <h1>BlueSky Terms</h1>
+HTML
+
+read -r -d '' html_suffix <<-HTML
+        <p>generated $ts</p>
+    </body>
+</html>
+HTML
+
+# obtain file listing
+mapfile -t image_files < <(ls "$output_dir"/*.png)
+
+printf "%s\n" "$html_prefix" > "$output_file"
+
+# generate all `<img>` tags
+for image in "${image_files[@]}"; do
+    read -r -d '' image_include <<-HTML
+        <p class="graph" style="max-width: 90%"><img src="$(basename "$image")"></p>
+HTML
+
+    printf "        %s\n" "$image_include" >> "$output_file"
+done
+
+printf "    %s\n" "$html_suffix" >> "$output_file"
