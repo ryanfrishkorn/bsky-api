@@ -8,13 +8,20 @@ output_file="${output_dir}/index.html"
 read -r -d '' html_prefix <<-HTML
 <!DOCTYPE html>
 <html>
-    <title>BlueSky Terms</title>
+    <head>
+        <title>BlueSky Terms</title>
+        <link rel="stylesheet" type="text/css" href="style.css"/>
+    </head>
     <body>
         <h1>BlueSky Terms</h1>
+        <div id="graphs">
 HTML
 
 read -r -d '' html_suffix <<-HTML
-        <p>generated $ts</p>
+        </div>
+        <div id="footer">
+            <p>generated $ts</p>
+        </div>
     </body>
 </html>
 HTML
@@ -27,7 +34,7 @@ printf "%s\n" "$html_prefix" > "$output_file"
 # generate all `<img>` tags
 for image in "${image_files[@]}"; do
     read -r -d '' image_include <<-HTML
-        <p class="graph" style="max-width: 90%"><img src="$(basename "$image")"></p>
+            <p class="graph"><img src="$(basename "$image")"></p>
 HTML
 
     printf "        %s\n" "$image_include" >> "$output_file"

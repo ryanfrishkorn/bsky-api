@@ -21,6 +21,26 @@ usage() {
     exit 1
 }
 
+generate_output_name() {
+    local output_dir=$1
+    local term=$2
+    local period=$3
+
+    local output
+    local period_string
+
+    # require args
+    if [[ -z $output_dir ]] || [[ -z $term ]] || [[ -z $period ]]; then
+        printf "missing args\n" 1>&2
+        return 1
+    fi
+
+    period_string=$(to_rrd_period "$period")
+    output=$(printf "%s" "${output_dir}/${term}-${period_string}")
+    output=$(printf "%s" "${output}" | sed 's/ /_/g') # replace spaces
+    printf "%s" "$output"
+}
+
 remove_existing() {
     if [[ -f "$1" ]]; then
         rm "$1"
@@ -48,6 +68,7 @@ rrd_create() {
 }
 
 rrd_graph() {
+    declare -a cmd
     local date_str
     local db
     local output
@@ -59,16 +80,20 @@ rrd_graph() {
     fi
 
     date_str=$(TZ=UTC date | sed 's/:/\\:/g') # escape colons
-    TZ=UTC rrdtool graph "$output" \
-    --start now-"${period_rrd}" \
-    --end now \
-    --title "BlueSky Term: '$term'" \
-    --vertical-label "posts / minute" \
-    --width 1280 \
-    --height 300 \
-    DEF:count="$db":count:AVERAGE \
-    LINE1:count#0000FF:"$term" \
-    COMMENT:"generated $date_str"
+
+    cmd+=(rrdtool graph "$output")
+    cmd+=(--start now-"${period_rrd}")
+    cmd+=(--end now)
+    cmd+=(--title "BlueSky Term: $term")
+    cmd+=(--vertical-label "posts / min")
+    cmd+=(--width 1280)
+    cmd+=(--height 300)
+    cmd+=(--utc)
+    cmd+=("DEF:count=${db}:count:AVERAGE")
+    cmd+=("LINE1:count#0000FF:${term}")
+    cmd+=("COMMENT:generated $date_str")
+
+    TZ=UTC "${cmd[@]}"
 }
 
 rrd_update() {
@@ -140,8 +165,8 @@ if [[ -z $term ]]; then
 fi
 
 # assign filenames
-rrd_output_graph=$(printf "%s" "${output_dir}/${term}.png" | sed 's/ /_/g')
-rrd_output_db=$(printf "%s" "${output_dir}/${term}.rrd" | sed 's/ /_/g')
+rrd_output_db="$(generate_output_name "$output_dir" "$term" "$period").rrd"
+rrd_output_image="$(generate_output_name "$output_dir" "$term" "$period").png"
 
 # create database
 rrd_create "$rrd_output_db" "$period"
@@ -158,7 +183,7 @@ mapfile -t series_data < <("${cmd_time_series[@]}")
 
 # update values and graph
 rrd_update "$rrd_output_db" "${series_data[@]}"
-rrd_graph "$rrd_output_db" "$rrd_output_graph"
+rrd_graph "$rrd_output_db" "$rrd_output_image"
 
 # remove output database
 rm "$rrd_output_db"
