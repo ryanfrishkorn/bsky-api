@@ -24,3 +24,4 @@ sync_sqlite_clone() {
 
 printf "%s starting sync\n" "$(TZ=UTC date)"
 sync_sqlite_clone "mini:~/bluerift/bsky-api/data/sync.sqlite3" "data/jetstream.sqlite3"
+printf "%s completed sync\n" "$(TZ=UTC date)"

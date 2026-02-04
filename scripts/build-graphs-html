@@ -33,8 +33,9 @@ printf "%s\n" "$html_prefix" > "$output_file"
 
 # generate all `<img>` tags
 for image in "${image_files[@]}"; do
+    image_basename="$(basename "$image")"
     read -r -d '' image_include <<-HTML
-            <p class="graph"><img src="$(basename "$image")"></p>
+            <p class="graph"><img id="$image_basename" src="$image_basename"></p>
 HTML
 
     printf "        %s\n" "$image_include" >> "$output_file"

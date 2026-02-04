@@ -21,6 +21,11 @@ usage() {
     exit 1
 }
 
+# check arguments are present
+if (( $# < 1 )); then
+    usage
+fi
+
 generate_output_name() {
     local output_dir=$1
     local term=$2
@@ -132,6 +137,7 @@ to_rrd_period() {
     return 1
 }
 
+# parse options
 while (($# > 0)); do
     case $1 in
         --help|-h)
