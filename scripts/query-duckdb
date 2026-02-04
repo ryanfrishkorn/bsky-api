@@ -11,18 +11,24 @@ declare -a ARGS
 
 # Script Function List
 usage() {
+    printf "global options:\n"
+    printf "  --db         <file.duckdb>  Specify database to use\n"
+    printf "  --help                      This message\n"
+    printf "  --list                      Print output in list format\n"
+    printf "  --verbose, v                Verbose output\n"
+    printf "\n"
     printf "subcommands:\n"
-    printf "  common-terms               Show most common terms and stats from FTS index\n"
-    printf "  distribution <term>        Show dids and corresponding ordered match counts\n"
-    printf "    --start    <'24 hours'>  Set relative start time\n"
-    printf "  histogram    <term>        Create histogram for supplied term\n"
-    printf "    --start    <'24 hours'>  Set relative start time\n"
-    printf "    --interval <'1 hour'>    Set bucket interval size\n"
-    printf "    --limit    <n>           Exclude accounts with more than <n> matching posts since start\n"
-    printf "  reputation   <did>         Calculate reputation score for did based on post uniquness\n"
-    printf "  search       <term>        Search for posts using FTS match for term\n"
-    printf "    --limit <n>              Limit results of search query\n"
-    printf "    --time                   Sort results by timestamp\n"
+    printf "  common-terms                Show most common terms and stats from FTS index\n"
+    printf "  distribution <term>         Show dids and corresponding ordered match counts\n"
+    printf "    --start    <'24 hours'>   Set relative start time\n"
+    printf "  histogram    <term>         Create histogram for supplied term\n"
+    printf "    --start    <'24 hours'>   Set relative start time\n"
+    printf "    --interval <'1 hour'>     Set bucket interval size\n"
+    printf "    --limit    <n>            Exclude accounts with more than <n> matching posts since start\n"
+    printf "  reputation   <did>          Calculate reputation score for did based on post uniquness\n"
+    printf "  search       <term>         Search for posts using FTS match for term\n"
+    printf "    --limit <n>               Limit results of search query\n"
+    printf "    --time                    Sort results by timestamp\n"
     exit 1
 }
 
@@ -300,16 +306,15 @@ SQL
 # Function Invocations
 
 # Check options
-for arg in "$@"; do
-    case $arg in
+while (($# > 0)); do
+    case $1 in
         --help|-h)
             shift
             usage
             ;;
         --db)
-            shift
-            DATABASE=$1
-            shift
+            DATABASE=$2
+            shift 2
             ;;
         --list)
             shift
@@ -320,7 +325,7 @@ for arg in "$@"; do
             VERBOSE=1
             ;;
         *)
-            ARGS+=("$arg")
+            ARGS+=("$1")
             shift
             ;;
     esac
