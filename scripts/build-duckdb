@@ -69,7 +69,6 @@ SQL
         end as text
         from js.posts
         where json_extract(feedpost, '$.langs') = '["en"]'
-        order by rowid
 SQL
 
     # and (
