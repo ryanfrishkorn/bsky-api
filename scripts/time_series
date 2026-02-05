@@ -10,9 +10,10 @@ rrd_output=0 # false
 
 usage() {
     printf "%s <term>\n" "$script_name"
-    printf "  --interval <str>  specify bucket interval [%s]\n" "$interval"
-    printf "  --period   <str>  specify time period     [%s]\n" "$period"
-    printf "  --rrd             output format for rrdtool\n"
+    printf "  --db       <file.duckdb>  specify database file\n"
+    printf "  --interval <str>          specify bucket interval [%s]\n" "$interval"
+    printf "  --period   <str>          specify time period     [%s]\n" "$period"
+    printf "  --rrd                     output format for rrdtool\n"
     exit 1
 }
 
@@ -25,6 +26,10 @@ while (($# > 0)); do
     case $1 in
         --help|-h)
             usage
+            ;;
+        --db)
+            db=$2
+            shift 2
             ;;
         --interval)
             interval=$2

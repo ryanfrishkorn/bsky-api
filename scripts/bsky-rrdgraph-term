@@ -10,11 +10,13 @@ output_dir="${HOME}/tmp"
 script_name="$(basename "$0")"
 # script_dir="$(cd "$(dirname "$0")" && pwd)" # does not work when invoked from symlink
 script_dir="${HOME}/bluerift/bsky-api/scripts"
+db="${HOME}/bluerift/bsky-api/data/jetstream.duckdb"
 interval='1 minute' # must be minutes for step calculation
 period='1 day'
 
 usage() {
     printf "%s <term>\n" "$script_name"
+    printf "  --db       <str>  specify duckdb database file           [%s]\n" "$db"
     printf "  --interval <str>  specify bucket interval (minutes only) [%s]\n" "$interval"
     printf "  --output   <str>  specify graph output directory         [%s]\n" "$output_dir"
     printf "  --period   <str>  specify time period                    [%s]\n" "$period"
@@ -143,6 +145,10 @@ while (($# > 0)); do
         --help|-h)
             usage
             ;;
+        --db)
+            db=$2
+            shift 2
+            ;;
         --interval)
             interval=$2
             shift 2
@@ -179,6 +185,7 @@ rrd_create "$rrd_output_db" "$period"
 
 # invoke `time_series` script in the same directory
 cmd_time_series+=("$script_dir/time_series")
+cmd_time_series+=(--db "$db")
 cmd_time_series+=(--interval "$interval")
 cmd_time_series+=(--period "$period")
 cmd_time_series+=(--rrd)
