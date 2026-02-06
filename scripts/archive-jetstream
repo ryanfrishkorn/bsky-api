@@ -4,11 +4,13 @@ set -euo pipefail
 declare -a args
 cfg_script_name="$(basename "$0")"
 cfg_confirm=0 # false
+cfg_force=0 # false
 
 usage() {
     printf "Generate daily archive of jetstream in parquet format.\n\n"
     printf "%s [YYYY-MM-DD] [input.sqlite3]\n" "$cfg_script_name"
     printf "  --confirm  prompt to confirm action\n"
+    printf "  --force    force overwrite of existing archive\n"
     printf "  --help\n"
     exit 1
 }
@@ -52,12 +54,10 @@ archive_day() {
         -- write parquet file
         copy (select * from posts) to '$db_dst' (format parquet);
 SQL
-    # VACUUM INTO '$db_dst';
 
     cmd=(duckdb)
 
     "${cmd[@]}" < <(printf "%s\n" "$query")
-    # gzip "$db_dst"
 }
 
 dashes_to_dots() {
@@ -104,6 +104,10 @@ while (($# > 0)); do
             cfg_confirm=1
             shift
             ;;
+        "--force")
+            cfg_force=1
+            shift
+            ;;
         *)
             args+=("$1")
             shift
@@ -120,6 +124,7 @@ archive_prefix=${args[0]:-"$(prefix_yesterday)"}
 db_src=${args[1]:-"data/jetstream.sqlite3"}
 db_dst="$(build_dest_filename "$archive_prefix")"
 printf "using prefix: %s source: %s dest: %s\n" "$archive_prefix" "$db_src" "$db_dst"
+
 if ((cfg_confirm)); then
     printf "confirm (y/n): "
     read -r answer
@@ -128,6 +133,17 @@ if ((cfg_confirm)); then
         exit 1
     fi
 fi
+
+if ((cfg_force)); then
+    # remove file if present
+    if [[ -f "$db_dst" ]]; then
+        printf "removing existing archive %s ... " "$db_dst"
+        if rm "$db_dst"; then
+            printf "ok\n"
+        fi
+    fi
+fi
+
 printf "archiving all posts from %s ... " "$archive_prefix"
 if archive_day "$archive_prefix" "$db_src" "$db_dst"; then
     printf "ok\n"

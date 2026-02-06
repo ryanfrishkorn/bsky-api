@@ -36,39 +36,44 @@ require_no_file() {
 }
 
 build_from_sqlite() {
-    local sqlite_source
+    local data_source
     local duckdb_dest
     declare -a cmd
 
     duckdb_dest=$1
-    sqlite_source=$2
+    data_source=$2
 
     # create schema
     read -r -d '' create_query <<-SQL || true
         create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, created_at TIMESTAMPTZ, text VARCHAR);
 SQL
-    cmd=(duckdb "$duckdb_dest")
-    "${cmd[@]}" < <(printf "%s" "$create_query")
+    # cmd=(duckdb "$duckdb_dest")
+    # "${cmd[@]}" < <(printf "%s" "$create_query")
 
-    cmd=(duckdb "$duckdb_dest")
+    cmd=(duckdb)
 
     read -r -d '' build_query <<-SQL || true
-        load sqlite;
-        attach '$sqlite_source' as js (TYPE sqlite, READONLY true);
-        insert or ignore into posts
-        select did, cid,
-        case
-            when json_exists(feedpost, '$.createdAt')
-            then json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ
-            else NULL
-        end as created_at,
-        case
-            when json_exists(feedpost, '$.text')
-            then json_extract_string(feedpost, '$.text')
-            else NULL
-        end as text
-        from js.posts
-        where json_extract(feedpost, '$.langs') = '["en"]'
+        create temporary table posts_tmp as
+        select * from read_parquet('$data_source');
+
+        -- open destination database and ensure schema
+        attach '$duckdb_dest' as db_new;
+        create table if not exists db_new.posts (created_at TIMESTAMP, cid VARCHAR UNIQUE, did VARCHAR, text VARCHAR);
+
+        -- extract and cast all data
+        with parsed as (
+            select
+                json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+                cid::VARCHAR as cid,
+                did::VARCHAR as did,
+                json_extract_string(feedpost, '$.text')::VARCHAR as text,
+                json_extract_string(feedpost, '$.langs') as langs
+            from posts_tmp
+        )
+        insert or ignore into db_new.posts
+            select created_at, cid, did, text from parsed
+                where langs = '["en"]';
+        detach db_new;
 SQL
 
     # and (
@@ -77,7 +82,7 @@ SQL
     #     or json_extract(feedpost, '$.langs') is null
     # )
 
-    "${cmd[@]}" < <(printf "%s" "$build_query") >/dev/null
+    "${cmd[@]}" < <(printf "%s" "$build_query")
 }
 
 file_info() {
@@ -105,7 +110,7 @@ fts_drop() {
 }
 
 usage() {
-    printf "%s <output.duckdb> <input.sqlite3>\n" "${SCRIPT_NAME}"
+    printf "%s <output.duckdb> <input.parquet> ...\n" "${SCRIPT_NAME}"
     printf "  --append  Append to existing duck database\n"
     exit 1
 }
@@ -167,10 +172,10 @@ else
 fi
 
 # iterate through sqlite files to import
-for sqlite_db in "${args[@]:1}"; do
-    printf "%s ... " "$sqlite_db"
+for source_db in "${args[@]:1}"; do
+    printf "%s ... " "$source_db"
 
-    if ! build_from_sqlite "${duckdb_dest_tmp}" "${sqlite_db}"; then
+    if ! build_from_sqlite "${duckdb_dest_tmp}" "${source_db}"; then
         printf "error\n"
         exit 1
     fi
