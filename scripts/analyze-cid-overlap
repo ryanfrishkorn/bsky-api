@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+declare -a cmd
+declare -a args
+
+usage() {
+    printf "Analyze the overlap of posts between two SQLite databases with DuckDB\n"
+    printf "usage: %s <db1.sqlite> <db2.sqlite>\n" "$(basename "$0")"
+    exit 1
+}
+
+while (($# > 0)); do
+    case $1 in
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if (( ${#args[@]} < 2)); then
+    usage
+fi
+
+# Compare intersection of cid between two databases
+# prefer database arguments in chronological order.
+# <first.sqlite3> <second.sqlite3>
+read -r -d '' query <<-SQL || true
+    -- attach databases
+    attach '${args[0]}' as db1 (read_only);
+    attach '${args[1]}' as db2 (read_only);
+
+    -- consume to memory for performance
+    -- preserving rowid for detailed inspection
+    create schema analytics;
+    create table analytics.db1_posts as select rowid, * from db1.posts;
+    create table analytics.db2_posts as select rowid, * from db2.posts;
+
+    -- detach databases
+    detach db1;
+    detach db2;
+
+    -- count for each database
+    with stats as (
+        select 'total records',
+            (select count(*) as count from analytics.db1_posts) as db1,
+            (select count(*) as count from analytics.db2_posts) as db2
+
+        union all
+        select 'cids distinct',
+            (select count(distinct cid) from analytics.db1_posts),
+            (select count(distinct cid) from analytics.db2_posts)
+
+        union all
+        select 'dids distinct',
+            (select count(distinct did) from analytics.db1_posts),
+            (select count(distinct did) from analytics.db2_posts)
+    )
+    select * from stats;
+
+    -- create comparison tables
+    create table analytics.cids_common as select cid from analytics.db1_posts
+    where cid in (
+        select cid from analytics.db2_posts
+    );
+
+    -- analyze cid hash overlap between databases
+    with base_stats as (
+        select
+            (select count(distinct cid) from analytics.db1_posts) +
+            (select count(distinct cid) from analytics.db2_posts) as total_distinct,
+            (select count(*) from analytics.cids_common) as total_common
+    ),
+    stats_cid as (
+        select 'cids distinct total' as metric, total_distinct from base_stats
+        union all
+        select 'cids common', total_common from base_stats
+        union all
+        select 'cids common %', ((total_common / total_distinct) * 100.0) from base_stats
+    )
+    select * from stats_cid;
+
+    -- show detailed timestamp information for common cids
+    with cid_group as (
+        select cid from analytics.cids_common order by rowid limit 10
+    ),
+    stats as (
+        select
+            'db1' as db,
+            rowid,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            cid,
+            did,
+            json_extract_string(feedpost, '$.text') as text
+        from analytics.db1_posts where cid in (
+            select cid from cid_group
+        )
+
+        union all
+        select
+            'db2' as db,
+            rowid,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            cid,
+            did,
+            json_extract_string(feedpost, '$.text') as text
+        from analytics.db2_posts
+        where cid in (
+            select cid from cid_group
+        )
+    ),
+    format as (
+        select
+            db,
+            rowid,
+            created_at,
+            cid,
+            substr(text, 0, 100) as text
+        from stats
+    )
+    select * from format;
+SQL
+
+cmd=(duckdb)
+
+printf "comparing db1: %s -> db2: %s\n" "$(basename "${args[0]}")" "$(basename "${args[1]}")"
+"${cmd[@]}" < <(printf "%s" "$query")
