@@ -117,8 +117,65 @@ read -r -d '' query <<-SQL || true
             rowid,
             created_at,
             cid,
-            substr(text, 0, 100) as text
+            substr(text, 0, 80) as text
         from stats
+    )
+    select * from format;
+
+    -- show first and last rows of each database
+    with db1_posts_head as (
+        select
+            rowid,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            cid,
+            json_extract_string(feedpost, '$.text') as text
+        from analytics.db1_posts
+        order by rowid asc
+    ),
+    db1_posts_tail as (
+        select * from (
+            select
+                rowid,
+                json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+                cid,
+                json_extract_string(feedpost, '$.text') as text
+            from analytics.db1_posts
+            order by rowid desc
+            limit 5
+        ) order by rowid asc
+    ),
+    db2_posts_head as (
+        select
+            rowid,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            cid,
+            json_extract_string(feedpost, '$.text') as text
+        from analytics.db2_posts
+        order by rowid asc
+    ),
+    db2_posts_tail as (
+        select * from (
+            select
+                rowid,
+                json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+                cid,
+                json_extract_string(feedpost, '$.text') as text
+            from analytics.db2_posts
+            order by rowid desc
+            limit 5
+        ) order by rowid asc
+    ),
+    combined as (
+        (select 'db1' as db, 'head' as position, * from db1_posts_head limit 5)
+        union all
+        (select 'db1', 'tail' as position, * from db1_posts_tail limit 5)
+        union all
+        (select 'db2', 'head' as position, * from db2_posts_head limit 5)
+        union all
+        (select 'db2', 'tail' as position, * from db2_posts_tail limit 5)
+    ),
+    format as (
+        select db, position, rowid, created_at, cid, substr(text, 0, 80) as text from combined
     )
     select * from format;
 SQL
