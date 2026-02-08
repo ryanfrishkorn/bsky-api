@@ -230,7 +230,8 @@ SQL
 # Use FTS match for supplied term
 search() {
     local term # $1
-    local interval ; interval='24 hours'
+    local exclude_rate_per_hour ; exclude_rate_per_hour=10
+    local interval_hours ; interval_hours='24'
     local limit ; limit=10000
     local order_clause
     local query
@@ -239,8 +240,8 @@ search() {
 
     while (( $# > 0 )); do
         case $1 in
-            --interval)
-                interval=$2
+            --hours)
+                interval_hours=$2
                 shift 2
                 ;;
             --limit)
@@ -262,29 +263,50 @@ search() {
     require_arg "$term"
 
     if ((sort_time)); then
-        order_clause="order by created_at desc"
+        order_clause="order by ts desc"
     else
         order_clause="order by score desc"
     fi
 
     read -r -d '' query <<-SQL || true
-        with all_posts as (
-            select * from posts
-            where created_at > now()::TIMESTAMP - interval '$interval'
+        with matches as (
+            select
+                created_at,
+                substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
+                did,
+                text
+            from posts
+            where score not null
+        ),
+        posts_window as (
+            select * from matches
+            where created_at > now()::TIMESTAMP - interval '$interval_hours hours'
                 and created_at < now()
         ),
-        matching_posts as (
+        filtered as (
+            select * from posts_window
+            where did not in (
+                select did from (
+                    select did, count(*) as count
+                    from posts_window
+                    where created_at > now()::TIMESTAMP - INTERVAL '$interval_hours hours'
+                        and created_at < now()::TIMESTAMP
+                    group by did
+                )
+                where count > ($interval_hours * $exclude_rate_per_hour) / $interval_hours
+            )
+        ),
+        formatted as (
             select
                 substr(created_at::VARCHAR, 0, 17) as ts,
-                substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
+                substr(score::VARCHAR, 0, 8) as score,
                 substr(did, 9) as did,
                 text
-            from all_posts
-            where score not null
-            $order_clause
-            limit $limit
+            from filtered
         )
-        select * from matching_posts
+        select * from formatted
+        $order_clause
+        limit $limit;
 SQL
 
 #     read -r -d '' query <<-SQL || true
