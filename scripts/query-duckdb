@@ -272,7 +272,7 @@ search() {
         with matches as (
             select
                 created_at,
-                substr(fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1)::VARCHAR, 0, 8) as score,
+                fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score,
                 did,
                 text
             from posts
@@ -280,8 +280,8 @@ search() {
         ),
         posts_window as (
             select * from matches
-            where created_at > now()::TIMESTAMP - interval '$interval_hours hours'
-                and created_at < now()
+            where created_at >= (now()::TIMESTAMP - interval '$interval_hours hours')
+                and created_at < now()::TIMESTAMP
         ),
         filtered as (
             select * from posts_window
@@ -289,8 +289,6 @@ search() {
                 select did from (
                     select did, count(*) as count
                     from posts_window
-                    where created_at > now()::TIMESTAMP - INTERVAL '$interval_hours hours'
-                        and created_at < now()::TIMESTAMP
                     group by did
                 )
                 where count > ($interval_hours * $exclude_rate_per_hour) / $interval_hours
