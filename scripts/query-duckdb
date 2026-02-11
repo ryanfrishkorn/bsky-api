@@ -296,7 +296,7 @@ search() {
         ),
         formatted as (
             select
-                substr(created_at::VARCHAR, 0, 17) as ts,
+                substr(created_at::VARCHAR, 0, 20) as ts,
                 substr(score::VARCHAR, 0, 8) as score,
                 substr(did, 9) as did,
                 text
