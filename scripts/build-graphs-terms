@@ -1,37 +1,12 @@
 #!/usr/bin/env bash
 
-# define terms here
-mapfile -t terms <<'EOS'
-abolish ice
-alex pretti
-bill gates
-don lemon
-elon musk
-epstein files
-federal reserve
-fuck ice
-georgia fort
-greenland
-ice murder
-iran
-jerome powell
-jesus ochoa
-jonathan ross
-michael cohen
-murder
-nato
-palantir
-propublica
-raymundo gutierrez
-renee good
-venezuela
-world war
-EOS
 
+# read terms from file
+mapfile -t terms < "${HOME}/.bsky_terms"
 output_dir="${HOME}/tmp/terms"
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-interval='15 minutes'
-period='30 days'
+interval='1 minutes'
+period='7 days'
 
 set -euo pipefail
 

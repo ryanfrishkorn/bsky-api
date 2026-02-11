@@ -4,6 +4,7 @@
 ts="$(TZ=UTC date)"
 output_dir="${HOME}/tmp/terms"
 output_file="${output_dir}/index.html"
+output_file_css="${output_dir}/style.css"
 
 read -r -d '' html_prefix <<-HTML
 <!DOCTYPE html>
@@ -29,6 +30,7 @@ HTML
 # obtain file listing
 mapfile -t image_files < <(ls "$output_dir"/*.png)
 
+# write html
 printf "%s\n" "$html_prefix" > "$output_file"
 
 # generate all `<img>` tags
@@ -42,3 +44,18 @@ HTML
 done
 
 printf "    %s\n" "$html_suffix" >> "$output_file"
+
+# write css
+read -r -d '' css_data <<-CSS
+body {
+    font-family: Monaco;
+    background-color: #ffffff;
+    text-align: center;
+}
+
+#graphs img {
+    max-width: 90%;
+}
+CSS
+
+printf "%s\n" "$(printf "%s\n" "$css_data")" > "$output_file_css"
