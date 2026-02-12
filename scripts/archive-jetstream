@@ -43,11 +43,12 @@ archive_day() {
     read -r -d '' query <<-SQL || true
         attach '$db_src' as js (read_only);
 
-        create table posts as (
+        create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, feedpost VARCHAR);
+        insert into posts (
             select * from js.posts
             where json_extract_string(feedpost, '$.createdAt')::TIMESTAMP >= '${prefix}'::TIMESTAMP
                 and json_extract_string(feedpost, '$.createdAt')::TIMESTAMP < '${prefix}'::TIMESTAMP + interval '1 day'
-        );
+        ) on conflict (cid) do nothing;
 
         detach js;
 
