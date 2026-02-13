@@ -90,7 +90,7 @@ read -r -d '' query <<-SQL || true
         select
             'db1' as db,
             rowid,
-            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at,
             cid,
             did,
             json_extract_string(feedpost, '$.text') as text
@@ -102,7 +102,7 @@ read -r -d '' query <<-SQL || true
         select
             'db2' as db,
             rowid,
-            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at,
             cid,
             did,
             json_extract_string(feedpost, '$.text') as text
@@ -126,7 +126,7 @@ read -r -d '' query <<-SQL || true
     with db1_posts_head as (
         select
             rowid,
-            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at,
             cid,
             json_extract_string(feedpost, '$.text') as text
         from analytics.db1_posts
@@ -136,7 +136,7 @@ read -r -d '' query <<-SQL || true
         select * from (
             select
                 rowid,
-                json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+                json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at,
                 cid,
                 json_extract_string(feedpost, '$.text') as text
             from analytics.db1_posts
@@ -147,7 +147,7 @@ read -r -d '' query <<-SQL || true
     db2_posts_head as (
         select
             rowid,
-            json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+            json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at,
             cid,
             json_extract_string(feedpost, '$.text') as text
         from analytics.db2_posts
@@ -157,7 +157,7 @@ read -r -d '' query <<-SQL || true
         select * from (
             select
                 rowid,
-                json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+                json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at,
                 cid,
                 json_extract_string(feedpost, '$.text') as text
             from analytics.db2_posts

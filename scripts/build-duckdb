@@ -43,13 +43,6 @@ build_from_sqlite() {
     duckdb_dest=$1
     data_source=$2
 
-    # create schema
-    read -r -d '' create_query <<-SQL || true
-        create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, created_at TIMESTAMPTZ, text VARCHAR);
-SQL
-    # cmd=(duckdb "$duckdb_dest")
-    # "${cmd[@]}" < <(printf "%s" "$create_query")
-
     cmd=(duckdb)
 
     read -r -d '' build_query <<-SQL || true
@@ -82,7 +75,7 @@ SQL
     #     or json_extract(feedpost, '$.langs') is null
     # )
 
-    "${cmd[@]}" < <(printf "%s" "$build_query")
+    "${cmd[@]}" < <(printf "%s" "$build_query") >/dev/null
 }
 
 file_info() {
@@ -98,7 +91,7 @@ fts_index() {
     file_duck=$1
 
     cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 1)")
-    duckdb "${file_duck}" "${cmd}" &> /dev/null
+    duckdb "${file_duck}" "${cmd}" 2> /dev/null
 }
 
 # drop existing fts index
