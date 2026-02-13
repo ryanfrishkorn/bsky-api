@@ -1,19 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
-declare -a args
-cfg_script_name="$(basename "$0")"
-cfg_confirm=0 # false
-cfg_force=0 # false
-
-usage() {
-    printf "Generate daily archive of jetstream in parquet format.\n\n"
-    printf "%s [YYYY-MM-DD] [input.sqlite3]\n" "$cfg_script_name"
-    printf "  --confirm  prompt to confirm action\n"
-    printf "  --force    force overwrite of existing archive\n"
-    printf "  --help\n"
-    exit 1
-}
+SCRIPT_NAME="$(basename "$0")"
 
 # collect all posts from a specific day
 archive_day() {
@@ -26,6 +14,7 @@ archive_day() {
     prefix=$1
     db_src=$2
     db_dst=$3
+    db_dst_gz="${db_dst}.gz"
 
     # require args
     if [[ -z $prefix ]]; then
@@ -34,31 +23,23 @@ archive_day() {
     fi
 
     # do not squash existing zipped database
-    if [[ -f "$db_dst" ]]; then
-        printf "output archive %s exists\n" "$db_dst"
+    if [[ -f "$db_dst_gz" ]]; then
+        printf "output archive %s exists\n" "$db_dst_gz"
         return 1
     fi
 
-    # restrict posts to the current day after parse
-    read -r -d '' query <<-SQL || true
-        attach '$db_src' as js (read_only);
-
-        create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, feedpost VARCHAR);
-        insert into posts (
-            select * from js.posts
-            where json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' >= '${prefix}'::TIMESTAMPTZ at time zone 'UTC'
-                and json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' < '${prefix}'::TIMESTAMPTZ at time zone 'UTC' + interval '1 day'
-        ) on conflict (cid) do nothing;
-
-        detach js;
-
-        -- write parquet file
-        copy (select * from posts) to '$db_dst' (format parquet);
+    IFS= read -r -d '' query <<-SQL
+ATTACH 'file:${db_src}?mode=ro' as js;
+CREATE TABLE posts as SELECT * FROM js.posts WHERE json_extract(feedpost, '$.createdAt')
+LIKE '${prefix}%';
+DETACH js; 
+VACUUM INTO '$db_dst';
 SQL
 
-    cmd=(duckdb)
+    cmd+=(sqlite3)
 
     "${cmd[@]}" < <(printf "%s\n" "$query")
+    gzip "$db_dst"
 }
 
 dashes_to_dots() {
@@ -70,7 +51,7 @@ build_dest_filename() {
     prefix=$1
 
     prefix_nice="$(dashes_to_dots "$prefix")"
-    printf "data/archive/jetstream-%s.parquet" "$prefix_nice"
+    printf "data/archive/jetstream-%s.sqlite3" "$prefix_nice"
 }
 
 prefix_today() {
@@ -92,59 +73,24 @@ prefix_yesterday() {
     printf "%s" "$date_str"
 }
 
-# if [[ $1 == "--help" ]] || [[ $1 == "-h" ]]; then
-#     usage
-# fi
+usage() {
+    printf "%s: [YYYY-MM-DD]\n" "$SCRIPT_NAME"
+    exit 1
+}
 
-while (($# > 0)); do
-    case $1 in
-        "--help"|"-h")
-            usage
-            ;;
-        "--confirm")
-            cfg_confirm=1
-            shift
-            ;;
-        "--force")
-            cfg_force=1
-            shift
-            ;;
-        *)
-            args+=("$1")
-            shift
-            ;;
-    esac
-done
+if [[ $1 == "--help" ]] || [[ $1 == "-h" ]]; then
+    usage
+fi
 
 # use yesterday's prefix
 # printf "prefix_today(): %s\n" "$(prefix_today)"
 # printf "prefix_yesterday(): %s\n" "$(prefix_yesterday)"
 TZ=UTC date
 
-archive_prefix=${args[0]:-"$(prefix_yesterday)"}
-db_src=${args[1]:-"data/jetstream.sqlite3"}
+archive_prefix="${1:-$(prefix_yesterday)}"
+db_src="data/jetstream.sqlite3"
 db_dst="$(build_dest_filename "$archive_prefix")"
-printf "using prefix: %s source: %s dest: %s\n" "$archive_prefix" "$db_src" "$db_dst"
-
-if ((cfg_confirm)); then
-    printf "confirm (y/n): "
-    read -r answer
-    if [[ $answer != "y" ]] && [[ $answer != "Y" ]]; then
-        printf "exiting\n"
-        exit 1
-    fi
-fi
-
-if ((cfg_force)); then
-    # remove file if present
-    if [[ -f "$db_dst" ]]; then
-        printf "removing existing archive %s ... " "$db_dst"
-        if rm "$db_dst"; then
-            printf "ok\n"
-        fi
-    fi
-fi
-
+printf "using prefix: %s\n" "$archive_prefix"
 printf "archiving all posts from %s ... " "$archive_prefix"
 if archive_day "$archive_prefix" "$db_src" "$db_dst"; then
     printf "ok\n"
