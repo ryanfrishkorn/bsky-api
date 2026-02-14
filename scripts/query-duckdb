@@ -280,8 +280,8 @@ search() {
         ),
         posts_window as (
             select * from matches
-            where created_at >= (now()::TIMESTAMP - interval '$interval_hours hours')
-                and created_at < now()::TIMESTAMP
+            where created_at >= (now()::TIMESTAMPTZ - interval '$interval_hours hours')
+                and created_at < now()::TIMESTAMPTZ
         ),
         filtered as (
             select * from posts_window
@@ -315,7 +315,7 @@ SQL
 #         text
 #     from posts
 #     where score not null
-#     and created_at > now()::TIMESTAMP - interval '24 hours'
+#     and created_at > now()::TIMESTAMPTZ - interval '24 hours'
 #     $order_clause
 #     limit $limit;
 # SQL

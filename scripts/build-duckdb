@@ -46,26 +46,28 @@ build_from_sqlite() {
     cmd=(duckdb)
 
     read -r -d '' build_query <<-SQL || true
-        create temporary table posts_tmp as
-        select * from read_parquet('$data_source');
+        -- import database '$data_source';
+        create view posts as select * from '$data_source';
 
         -- open destination database and ensure schema
         attach '$duckdb_dest' as db_new;
-        create table if not exists db_new.posts (created_at TIMESTAMP, cid VARCHAR UNIQUE, did VARCHAR, text VARCHAR);
+        create table if not exists db_new.posts (created_at TIMESTAMPTZ, cid VARCHAR UNIQUE, did VARCHAR, text VARCHAR);
 
         -- extract and cast all data
         with parsed as (
             select
-                json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as created_at,
+                json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ as created_at,
                 cid::VARCHAR as cid,
                 did::VARCHAR as did,
                 json_extract_string(feedpost, '$.text')::VARCHAR as text,
                 json_extract_string(feedpost, '$.langs') as langs
-            from posts_tmp
+            from posts
         )
         insert or ignore into db_new.posts
-            select created_at, cid, did, text from parsed
-                where langs = '["en"]';
+            select created_at, cid, did, text
+            from parsed
+            where langs = '["en"]'
+            order by created_at asc;
         detach db_new;
 SQL
 

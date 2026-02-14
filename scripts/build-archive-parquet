@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+# Extract data matching datetime prefix in UTC
+export TZ=UTC
+set -eo pipefail
+
+declare -a args
+declare -a cmd
+declare -a databases
+
+cfg_output_dir="data/archive"
+cfg_prefix="$(TZ=UTC date -I)"
+cfg_script_name="$(basename "$0")"
+
+usage() {
+    printf "Extract jetstream data from SQLite databases to Parquet via DuckDB\n\n"
+    printf "%s <db1.sqlite3> [db2.sqlite3]...\n" "$cfg_script_name"
+    printf "  --prefix <timestamp_prefix>  Specify prefix [%s]\n" "$cfg_prefix"
+    exit 1
+}
+
+while (($# > 0)); do
+    case $1 in
+        --help|-h)
+            usage
+            ;;
+        --prefix)
+            cfg_prefix=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+printf "prefix: %s\n" "$cfg_prefix"
+
+if (("${#args[@]}" < 1)); then
+    usage
+fi
+
+databases=("${args[@]}")
+
+read -r -d '' query_base <<-SQL || true
+    create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, feedpost VARCHAR);
+SQL
+
+# build query for each input database
+for db_import in "${databases[@]}"; do
+    read -r -d '' query_append <<-SQL || true
+        attach '$db_import' as db (read_only);
+        insert into posts (
+            select * from db.posts
+            where json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' >= '${cfg_prefix}'::TIMESTAMPTZ at time zone 'UTC'
+                and json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' < '${cfg_prefix}'::TIMESTAMPTZ at time zone 'UTC' + interval '1 day'
+        ) on conflict (cid) do nothing;
+        detach db;
+
+        select 'rows (cumulative)' as key, count(*) as value from posts;
+SQL
+
+    # append to query
+    query_base="$(printf "%s\n%s" "$query_base" "$query_append")"
+done
+
+# export parquet data for given prefix
+read -r -d '' query_export <<-SQL || true
+    -- This exports with schema to a directory structure.
+    -- export database '${cfg_output_dir}/${cfg_prefix}' (format parquet, compression zstd);
+
+    -- This exports to a single file which can be attached by:
+    -- create view post as select * from 'jetstream-2026-01-01.parquet';
+    copy (select * from posts) to '${cfg_output_dir}/jetstream-${cfg_prefix}.parquet' (format parquet);
+SQL
+
+query_base="$(printf "%s\n%s" "$query_base" "$query_export")"
+
+printf "%s\n" "$query_base"
+
+cmd=(duckdb)
+"${cmd[@]}" < <(printf "%s" "$query_base")
