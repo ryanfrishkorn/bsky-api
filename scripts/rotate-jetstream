@@ -6,6 +6,7 @@ set -eo pipefail
 declare -a args
 script_name=$(basename "$0")
 cfg_dry_run=0 # false
+cfg_info=0 # false
 
 usage() {
     printf "%s [date_prefix]\n" "$script_name"
@@ -20,6 +21,10 @@ while (($# > 0)); do
     case $1 in
         --help|-h)
             usage
+            ;;
+        --info)
+            cfg_info=1 # true
+            shift
             ;;
         --dry-run)
             cfg_dry_run=1 # true
@@ -36,21 +41,73 @@ current_db="data/jetstream.sqlite3"
 new_db="data/new.sqlite3"
 date_prefix=${args[0]:-$(prefix_today)}
 
-read -r -d '' query<<-SQL || true
-    ATTACH 'file:${current_db}?mode=ro' as js;
-    CREATE TABLE posts AS SELECT * FROM js.posts
-    WHERE json_extract(feedpost, '$.createdAt') >= '$date_prefix';
-    DETACH js;
+# Print information about counts of matching or excluded posts.
+read -r -d '' query_info <<-SQL || true
+    attach 'file:${current_db}?mode=ro' as js;
+
+    -- information
+    with posts_past as (
+        select * from js.posts
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime('$date_prefix')
+    ),
+    posts_future as (
+        select * from js.posts
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') > datetime()
+    ),
+    posts_current as (
+        select * from js.posts
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$date_prefix')
+            and datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime()
+    )
+    select 'posts' as key, count(*) as stat from js.posts
+    union all
+    select 'posts_past', count(*) from posts_past
+    union all
+    select 'posts_current', count(*) from posts_current
+    union all
+    select 'posts_future', count(*) from posts_future;
+
+    detach js;
+SQL
+
+# Build a new database containing all parsed timestamps within the current day prefix
+read -r -d '' query_build <<-SQL || true
+    attach 'file:${current_db}?mode=ro' as js;
+
+    -- build data and detach
+    -- exclude future posts and posts before start of day prefix
+    create table posts as
+        select * from js.posts
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$date_prefix')
+            and datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime();
+
+    detach js;
 SQL
 
 printf "date_prefix: %s\n" "$date_prefix"
-printf "query: %s\n" "$query"
+printf "query: %s\n" "$query_build"
 
+# quit after showing prefix and query values
 if ((cfg_dry_run)); then
     exit 0
 fi
 
-printf "creating new database ... "
-if sqlite3 "$new_db" < <(printf "%s\n" "$query"); then
+# print information only and exit
+if ((cfg_info)); then
+    printf "query_info: %s\n" "$query_info"
+    sqlite3 < <(printf "%s\n" "$query_info")
+    exit 0
+fi
+
+# remove the new database path if it exists
+if [[ -f "$new_db" ]]; then
+    printf "removing existing database [%s] ... " "$new_db"
+    if rm "$new_db"; then
+        printf "ok\n"
+    fi
+fi
+
+printf "building new database ... "
+if sqlite3 "$new_db" < <(printf "%s\n" "$query_build"); then
     printf "ok\n"
 fi
