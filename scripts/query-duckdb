@@ -54,6 +54,9 @@ run_query() {
     # prepend timezone set
     query="$(printf "set time zone 'UTC'; %s" "$query")"
     # query="$(printf "%s" "$query")"
+    if ((VERBOSE)); then
+        printf "%s\n" "$query" 1>&2
+    fi
 
     cmd+=(duckdb -readonly)
     # optional list output
@@ -230,16 +233,21 @@ SQL
 # Use FTS match for supplied term
 search() {
     local term # $1
-    local exclude_rate_per_hour ; exclude_rate_per_hour=10
+    local exclude_rate_per_hour ; exclude_rate_per_hour=0
     local interval_hours ; interval_hours='24'
     local limit ; limit=10000
     local order_clause
     local query
     local sort_time ; sort_time=0
+    local where_clause ; where_clause=""
     declare -a args
 
     while (( $# > 0 )); do
         case $1 in
+            --exclude-rate)
+                exclude_rate_per_hour=$2
+                shift 2
+                ;;
             --hours)
                 interval_hours=$2
                 shift 2
@@ -261,6 +269,19 @@ search() {
 
     term="${args[0]}"
     require_arg "$term"
+
+    if ((exclude_rate_per_hour > 0)); then
+        read -r -d '' where_clause <<-SQL || true
+            where did not in (
+                select did from (
+                    select did, count(*) as count
+                    from posts_window
+                    group by did
+                )
+                where count > ($interval_hours * $exclude_rate_per_hour) / $interval_hours
+            )
+SQL
+    fi
 
     if ((sort_time)); then
         order_clause="order by ts desc"
@@ -285,14 +306,7 @@ search() {
         ),
         filtered as (
             select * from posts_window
-            where did not in (
-                select did from (
-                    select did, count(*) as count
-                    from posts_window
-                    group by did
-                )
-                where count > ($interval_hours * $exclude_rate_per_hour) / $interval_hours
-            )
+            $where_clause
         ),
         formatted as (
             select
