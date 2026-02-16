@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+
+# Parquet Queries
+
+set -eo pipefail
+
+DATABASE="${HOME}/.jetstream.parquet"
+VERBOSE=0 # false
+declare -a ARGS
+
+# Script Function List
+usage() {
+    printf "global options:\n"
+    printf "  --db         <file.duckdb>  Specify database to use\n"
+    printf "  --help                      This message\n"
+    printf "  --list                      Print output in list format\n"
+    printf "  --verbose                   Verbose output\n"
+    printf "\n"
+    printf "subcommands:\n"
+    printf "  recent  Show most recent posts based on parsed createdAt\n"
+    exit 1
+}
+
+# Functions
+
+# Require argument $1 or exit
+require_arg() {
+    if [[ -z $1 ]]; then
+        printf "required argument missing\n" 1>&2
+        exit 1
+    fi
+    return 0
+}
+
+# Execute duckdb query
+run_query() {
+    declare -a cmd
+    local query
+
+    query=$1
+    require_arg "$query"
+
+    # prepend timezone set
+    query="$(printf "set time zone 'UTC'; %s" "$query")"
+    if ((VERBOSE)); then
+        printf "%s\n" "$query" 1>&2
+    fi
+
+    cmd+=(duckdb)
+    cmd+=(-json)
+
+    # use jq for compact single-line item format
+    jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
+}
+
+# Function Invocations
+recent() {
+    read -r -d '' query <<-SQL || true
+        create view posts as select * from '$DATABASE';
+        select json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ as created_at from posts order by created_at desc limit 20;
+SQL
+    run_query "$query"
+}
+
+# Check options
+while (($# > 0)); do
+    case $1 in
+        --help|-h)
+            shift
+            usage
+            ;;
+        --db)
+            DATABASE=$2
+            shift 2
+            ;;
+        --verbose)
+            shift
+            VERBOSE=1
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# require subcommand
+if ((${#ARGS[@]} < 1)); then
+    usage
+fi
+
+# invoke corresponding function
+"${ARGS[@]}"
