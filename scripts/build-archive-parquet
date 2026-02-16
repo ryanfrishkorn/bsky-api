@@ -55,6 +55,9 @@ for db_import in "${databases[@]}"; do
             select * from db.posts
             where json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' >= '${cfg_prefix}'::TIMESTAMPTZ at time zone 'UTC'
                 and json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' < '${cfg_prefix}'::TIMESTAMPTZ at time zone 'UTC' + interval '1 day'
+                -- NOTE: this EXCLUDES posts beyond the current timestamp, which could be problematic if processing
+                -- data with future timestamps, but currently avoids a lot of confusion and strange outliers.
+                and json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' < now()::TIMESTAMPTZ at time zone 'UTC'
         ) on conflict (cid) do nothing;
         detach db;
 
