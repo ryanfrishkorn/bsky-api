@@ -11,10 +11,10 @@ declare -a ARGS
 # Script Function List
 usage() {
     printf "global options:\n"
-    printf "  --db         <file.duckdb>  Specify database to use\n"
-    printf "  --help                      This message\n"
-    printf "  --list                      Print output in list format\n"
-    printf "  --verbose                   Verbose output\n"
+    printf "  --db      <file.duckdb>  Specify database to use\n"
+    printf "  --help                   This message\n"
+    printf "  --list                   Print output in list format\n"
+    printf "  --verbose                Verbose output\n"
     printf "\n"
     printf "subcommands:\n"
     printf "  recent  Show most recent posts based on parsed createdAt\n"
