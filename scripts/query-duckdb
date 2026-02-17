@@ -238,6 +238,7 @@ search() {
     local limit ; limit=10000
     local order_clause
     local query
+    local regex ; regex=0
     local sort_time ; sort_time=0
     local where_clause ; where_clause=""
     declare -a args
@@ -256,6 +257,12 @@ search() {
                 limit=$2
                 shift 2
                 ;;
+            --regex)
+                regex=1
+                shift
+                # force sort by time since there is no score
+                sort_time=1
+                ;;
             --time)
                 shift
                 sort_time=1
@@ -269,6 +276,28 @@ search() {
 
     term="${args[0]}"
     require_arg "$term"
+
+    read -r -d '' query_matches <<-SQL || true
+        select
+            created_at,
+            fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score,
+            did,
+            text
+        from posts
+        where score not null
+SQL
+
+    if ((regex)); then
+        read -r -d '' query_matches <<-SQL || true
+            select
+                created_at,
+                NULL as score, -- placeholder to avoid query failure
+                did,
+                text
+            from posts
+            where regexp_matches(text, '\b$term\b', 'i')
+SQL
+    fi
 
     if ((exclude_rate_per_hour > 0)); then
         read -r -d '' where_clause <<-SQL || true
@@ -291,13 +320,7 @@ SQL
 
     read -r -d '' query <<-SQL || true
         with matches as (
-            select
-                created_at,
-                fts_main_posts.match_bm25(cid, '$term', fields := 'text', k := 1.2, b := 0.75, conjunctive := 1) as score,
-                did,
-                text
-            from posts
-            where score not null
+            $query_matches
         ),
         posts_window as (
             select * from matches
