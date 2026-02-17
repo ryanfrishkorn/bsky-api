@@ -19,7 +19,7 @@ usage() {
 
 # output filter to create rrdtool compatible csv
 rrd_output() {
-    jq -rc '.[] | { ts, msg_count } | [.[]] | @csv' | sed 's/\.0,/:/g'
+    jq -rc '.[] | { ts, count } | [.[]] | @csv' | sed 's/\.0,/:/g'
 }
 
 while (($# > 0)); do
@@ -69,12 +69,12 @@ read -r -d '' query <<-SQL || true
         as bucket
     ),
     counts as (
-        select time_bucket(interval '$interval', created_at::TIMESTAMP) as bucket, count(*) as msg_count
+        select time_bucket(interval '$interval', created_at::TIMESTAMP) as bucket, count(*) as count
         from posts
         where regexp_matches(text, '\b$term\b', 'i')
         group by bucket
     )
-    select epoch(ab.bucket) as ts, ab.bucket, '$term' as term, coalesce(c.msg_count, 0) as msg_count
+    select epoch(ab.bucket) as ts, ab.bucket, '$term' as term, coalesce(c.count, 0) as count
     from all_buckets ab
     left join counts c on ab.bucket = c.bucket
     order by ab.bucket;
@@ -86,5 +86,5 @@ cmd+=("$db")
 if ((rrd_output)); then
     "${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output
 else
-    "${cmd[@]}" < <(printf "%s\n" "$query") | jq -c '.[] | { bucket, term, msg_count }'
+    "${cmd[@]}" < <(printf "%s\n" "$query") | jq -c '.[] | { bucket, count, term}'
 fi
