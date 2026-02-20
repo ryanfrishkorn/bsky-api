@@ -74,7 +74,7 @@ read -r -d '' query_export <<-SQL || true
     -- export database '${cfg_output_dir}/${cfg_prefix}' (format parquet, compression zstd);
 
     -- This exports to a single file which can be attached by:
-    -- create view post as select * from 'jetstream-2026-01-01.parquet';
+    -- create view post as select * from 'jetstream-YYYY-MM-DD.parquet';
     copy (select * from posts) to '${cfg_output_dir}/jetstream-${cfg_prefix}.parquet' (format parquet);
 SQL
 

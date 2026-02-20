@@ -71,12 +71,6 @@ build_from_sqlite() {
         detach db_new;
 SQL
 
-    # and (
-    #     json_extract(feedpost, '$.langs') = '["en"]'
-    #     or json_extract(feedpost, '$.langs') = ''
-    #     or json_extract(feedpost, '$.langs') is null
-    # )
-
     "${cmd[@]}" < <(printf "%s" "$build_query") >/dev/null
 }
 
@@ -93,7 +87,7 @@ fts_index() {
     file_duck=$1
 
     cmd=$(printf "pragma create_fts_index(posts, cid, text, stemmer = 'porter', stopwords = 'english', ignore = '(\\.|[^a-z])+', strip_accents = 1, lower = 1, overwrite = 1)")
-    duckdb "${file_duck}" "${cmd}" 2> /dev/null
+    duckdb "${file_duck}" "${cmd}" &> /dev/null
 }
 
 # drop existing fts index
@@ -124,7 +118,7 @@ append=1    ; cfg_append()    { return $append; }    # default false
 build_fts=0 ; cfg_build_fts() { return $build_fts; } # default true
 drop_fts=1  ; cfg_drop_fts()  { return $drop_fts; }  # default false
 
-while [[ $# -gt 0 ]]; do
+while (($# > 0)); do
     case $1 in
         "--append")
             shift

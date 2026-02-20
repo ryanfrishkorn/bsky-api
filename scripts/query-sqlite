@@ -7,21 +7,21 @@ build_fts() {
 
     # delete existing
     q="drop table if exists search"
-    if ! query "$q"; then
+    if ! run-query "$q"; then
         printf "error dropping fts table\n"
         return 1
     fi
 
     # call fts extension
     q="create virtual table search using fts5(cid unindexed, text)"
-    if ! query "$q"; then
+    if ! run-query "$q"; then
         printf "error creating fts vtable\n" 1>&2
         return 1
     fi
 
     # insert all existing data
     q="insert into search (cid, text) select cid, text from posts"
-    if ! query "$q"; then
+    if ! run-query "$q"; then
         printf "error indexing fts table\n"
         return 1
     fi
@@ -29,7 +29,20 @@ build_fts() {
     return 0
 }
 
-query() {
+days() {
+    read -r -d '' query <<-SQL
+        select
+            substr(datetime(json_extract(feedpost, '$.createdAt'), 'utc'), 0, 11) as prefix,
+            count(*) as count from posts
+            group by prefix
+            order by count desc
+            limit 5;
+SQL
+
+    run-query "$query"
+}
+
+run-query() {
     local db
     local q
     declare -a cmd
@@ -54,7 +67,7 @@ search() {
     term=$1
 
     q="select cid, rank, snippet(search, 1, '[', ']', '...', 100) from search WHERE search match '$term' order by rank"
-    if ! query "$q"; then
+    if ! run-query "$q"; then
         printf "error executing search query\n"
         return 1
     fi
@@ -83,7 +96,7 @@ preview() {
     cid=$1
 
     q="select feedpost from posts where cid = '$cid' limit 1"
-    if ! query "$q" | jq -c '.feedpost | { createdAt, text }'; then
+    if ! run-query "$q" | jq -c '.feedpost | { createdAt, text }'; then
         printf "error executing query: %s\n" "$q"
         return 1
     fi
