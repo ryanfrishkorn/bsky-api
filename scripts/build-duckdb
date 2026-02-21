@@ -135,7 +135,7 @@ done
 require_bin duckdb
 
 duckdb_dest="${args[0]}"
-duckdb_dest_tmp="${duckdb_dest}.tmp"
+duckdb_dest_tmp="${duckdb_dest}_new"
 # time_start=${args[0]:-"$(TZ=UTC date -I)T00:00:00"}
 # time_stop=${args[1]:-"$(TZ=UTC date -I)T23:59:59"}
 
