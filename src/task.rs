@@ -11,11 +11,17 @@ pub struct Task {
 
 impl Task {
     pub fn new(process: Process) -> Task {
+        let current_time = chrono::Utc::now();
+        let date_prefix = format!("{}", current_time.format("%Y-%m-%d"));
         match process {
             Process::ArchiveJetstream => Self {
                 process,
-                cmd: "./scripts/archive-jetstream".to_string(),
-                args: Vec::new(),
+                cmd: "./scripts/build-archive-parquet".to_string(),
+                args: ["data/jetstream.sqlite3"]
+                    .to_vec()
+                    .iter_mut()
+                    .map(|x| x.to_string())
+                    .collect(),
                 status: TaskStatus::Created,
                 result: None,
             },
@@ -41,10 +47,13 @@ impl Task {
             Process::BuildDuckDb => Self {
                 process,
                 cmd: "./scripts/build-duckdb".to_string(),
-                args: ["data/jetstream.duckdb", "data/jetstream.sqlite3"]
-                    .iter_mut()
-                    .map(|x| x.to_string())
-                    .collect(),
+                args: [
+                    "data/jetstream.duckdb",
+                    format!("data/archive/jetstream-{}.parquet", date_prefix).as_str(),
+                ]
+                .iter_mut()
+                .map(|x| x.to_string())
+                .collect(),
                 status: TaskStatus::Created,
                 result: None,
             },
