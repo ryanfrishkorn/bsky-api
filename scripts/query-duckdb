@@ -5,7 +5,7 @@
 set -eo pipefail
 
 DATABASE="${HOME}/.jetstream.duckdb"
-OUTPUT_LIST=0 # false
+OUTPUT_FORMAT="duckbox"
 VERBOSE=0 # false
 declare -a ARGS
 
@@ -15,6 +15,7 @@ usage() {
     printf "  --db         <file.duckdb>  Specify database to use\n"
     printf "  --help                      This message\n"
     printf "  --list                      Print output in list format\n"
+    printf "  --json                      Print output in json format\n"
     printf "  --verbose, v                Verbose output\n"
     printf "\n"
     printf "subcommands:\n"
@@ -60,20 +61,22 @@ run_query() {
 
     cmd+=(duckdb -readonly)
     # optional list output
-    if ((OUTPUT_LIST)); then
-        cmd+=(-list)
-    else
-        # default json output
-        cmd+=(-json)
-    fi
+    case $OUTPUT_FORMAT in
+        "json")
+            cmd+=(-json)
+            ;;
+        "list")
+            cmd+=(-list)
+            ;;
+    esac
+
     cmd+=("$DATABASE")
 
-    # use jq if json output
-    if ((OUTPUT_LIST)); then
-        "${cmd[@]}" < <(printf "%s\n" "$query")
-    else
+    if [[ $OUTPUT_FORMAT == "json" ]]; then
         # use jq for compact single-line item format
         jq -c '.[]' < <("${cmd[@]}" < <(printf "%s\n" "$query"))
+    else
+        "${cmd[@]}" < <(printf "%s\n" "$query")
     fi
 }
 
@@ -99,9 +102,22 @@ SQL
     run_query "$query"
 }
 
+distribution-stats() {
+    read -r -d '' query <<-SQL || true
+        with recent as (
+            select * from posts where created_at > now()::TIMESTAMP - interval '1 hour'
+        ),
+        matches as (
+            select * from recent where regexp_matches(text, 'social media')
+        )
+        select (select count(distinct did) as did_count from matches) / (select count(*) as total from matches);
+SQL
+}
+
 distribution() {
     local start; start="24 hours"
     local term
+    local data ; data=0 # false
     local query
     declare -a args
 
@@ -110,6 +126,10 @@ distribution() {
             --start)
                 start=$2
                 shift 2
+                ;;
+            --data)
+                data=1 # true
+                shift
                 ;;
             *)
                 args+=("$1")
@@ -120,15 +140,38 @@ distribution() {
     term=${args[0]}
     require_arg "$term"
 
+
     read -r -d '' query <<-SQL || true
-        select did, count(*) as count
-        from posts
-        where created_at >= now() - interval '$start'
-            and created_at < now()
-            and text ilike '% ${term} %'
-        group by did
-        order by count
+        with recent as (
+            select * from posts where created_at > now()::TIMESTAMP - interval '1 hour'
+        ),
+        matches as (
+            select * from recent where regexp_matches(text, '$term', 'i')
+        ),
+        stats as (
+            select count(distinct did) as did_count, count(*) as total from matches
+        )
+        select 'term' as key, '$term' 
+        union all
+        select 'did_distinct', did_count as value from stats
+        union all
+        select 'matching_posts', total from stats
+        union all
+        select 'ratio', did_count / total from stats;
 SQL
+
+    if ((data)); then
+        read -r -d '' query <<-SQL || true
+            select did, count(*) as count
+            from posts
+            where created_at >= now() - interval '$start'
+                and created_at < now()
+                -- and text ilike '% ${term} %'
+                and regexp_matches(text, '$term', 'i')
+            group by did
+            order by count desc
+SQL
+    fi
 
     if ((VERBOSE)); then
         printf "%s\n" "$query"
@@ -373,9 +416,13 @@ while (($# > 0)); do
             DATABASE=$2
             shift 2
             ;;
+        --json)
+            shift
+            OUTPUT_FORMAT="json"
+            ;;
         --list)
             shift
-            OUTPUT_LIST=1
+            OUTPUT_FORMAT="list"
             ;;
         -v|--verbose)
             shift
