@@ -25,6 +25,22 @@ impl Task {
                 status: TaskStatus::Created,
                 result: None,
             },
+            Process::BskyInsight => Self {
+                process,
+                cmd: "./bin/bsky-insight".to_string(),
+                args: [
+                    "--db",
+                    "data/insight.duckdb",
+                    "--lowercase",
+                    "--limit",
+                    "500",
+                ]
+                .iter_mut()
+                .map(|x| x.to_string())
+                .collect(),
+                status: TaskStatus::Created,
+                result: None,
+            },
             Process::BskyTrending => Self {
                 process,
                 cmd: "./bin/bsky-trending".to_string(),
@@ -123,6 +139,7 @@ pub enum TaskResult {
 #[serde(rename_all = "snake_case")]
 pub enum Process {
     ArchiveJetstream,
+    BskyInsight,
     BskyTrending,
     BuildDuckDb,
     ListData,
