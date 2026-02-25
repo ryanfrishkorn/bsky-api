@@ -86,5 +86,5 @@ cmd+=("$db")
 if ((rrd_output)); then
     "${cmd[@]}" < <(printf "%s\n" "$query") | rrd_output
 else
-    "${cmd[@]}" < <(printf "%s\n" "$query") | jq -c '.[] | { bucket, count, term}'
+    "${cmd[@]}" < <(printf "%s\n" "$query") | jq -c '.[] | { bucket, term, count}'
 fi
