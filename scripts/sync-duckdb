@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Sync current remote parquet database to local and append to DuckDB
+sync_parquet_build() {
+    declare -a cmd_rsync
+    declare -a cmd_build
+
+    local src ; src=$1
+    local dst ; dst=$2
+
+    # rsync src to destination
+    cmd_rsync=(rsync)
+    # cmd_rsync+=(--debug=DELTASUM)
+    cmd_rsync+=(-z --stats --progress)
+    cmd_rsync+=(-va)
+    cmd_rsync+=("$src")
+    cmd_rsync+=("$dst")
+
+    # invoke build script and append newly transferred file
+    cmd_build=(./scripts/build-duckdb)
+    cmd_build+=(--append)
+    cmd_build+=(data/jetstream.duckdb)
+    cmd_build+=("$dst")
+
+    "${cmd_rsync[@]}" && "${cmd_build[@]}"
+}
+
+src="mini:/Users/alphalux/bluerift/bsky-api/data/sync.parquet"
+dst="data/sync.parquet"
+
+sync_parquet_build "$src" "$dst"
