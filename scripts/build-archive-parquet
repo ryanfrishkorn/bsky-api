@@ -52,7 +52,7 @@ for db_import in "${databases[@]}"; do
     read -r -d '' query_append <<-SQL || true
         attach '$db_import' as db (read_only);
         insert into posts (
-            select * from db.posts
+            select cid, did, feedpost from db.posts
             where json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' >= '${cfg_prefix}'::TIMESTAMPTZ at time zone 'UTC'
                 and json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' < '${cfg_prefix}'::TIMESTAMPTZ at time zone 'UTC' + interval '1 day'
                 -- NOTE: this EXCLUDES posts beyond the current timestamp, which could be problematic if processing
