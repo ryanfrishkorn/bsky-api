@@ -44,7 +44,7 @@ fi
 databases=("${args[@]}")
 
 read -r -d '' query_base <<-SQL || true
-    create table if not exists posts (did VARCHAR, cid VARCHAR UNIQUE, feedpost VARCHAR);
+    create table if not exists posts (cid VARCHAR UNIQUE, did VARCHAR, feedpost VARCHAR);
 SQL
 
 # build query for each input database
