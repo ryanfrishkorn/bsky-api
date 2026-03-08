@@ -76,8 +76,9 @@ read -r -d '' query_build <<-SQL || true
 
     -- build data and detach
     -- exclude future posts and posts before start of day prefix
-    create table posts as
-        select * from js.posts
+    create table posts (cid TEXT UNIQUE, did TEXT, feedpost TEXT);
+    insert or ignore into posts
+        select cid, did, feedpost from js.posts
         where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$date_prefix')
             and datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime();
 
