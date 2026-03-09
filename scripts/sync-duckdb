@@ -28,4 +28,6 @@ sync_parquet_build() {
 src="mini:/Users/alphalux/bluerift/bsky-api/data/sync.parquet"
 dst="data/sync.parquet"
 
+printf "%s starting sync\n" "$(TZ=UTC date)"
 sync_parquet_build "$src" "$dst"
+printf "%s sync complete\n" "$(TZ=UTC date)"
