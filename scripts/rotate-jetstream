@@ -2,14 +2,13 @@
 
 set -eo pipefail
 
-# variables
-declare -a args
-script_name=$(basename "$0")
-cfg_dry_run=0 # false
-cfg_info=0 # false
-
 usage() {
-    printf "%s [date_prefix]\n" "$script_name"
+    printf "%s\n" "$cfg_script_name"
+    printf "  --help                    Usage information\n"
+    printf "  --db      <file.sqlite3>  Source database [default: %s]\n" "$cfg_db"
+    printf "  --dry-run                 Display query info and exit\n"
+    printf "  --info                    Show posts information (no rotation)\n"
+    printf "  --output  <file.sqlite3>  Output database name [default: %s]\n" "$cfg_db_new"
     exit 1
 }
 
@@ -17,18 +16,35 @@ prefix_today() {
     TZ=UTC date -I
 }
 
+# variables
+declare -a args
+cfg_script_name=$(basename "$0")
+cfg_dry_run=0 # false
+cfg_info=0 # false
+cfg_db="data/jetstream.sqlite3"
+cfg_db_new="data/new.sqlite3"
+cfg_date_prefix=$(prefix_today)
+
 while (($# > 0)); do
     case $1 in
         --help|-h)
             usage
             ;;
-        --info)
-            cfg_info=1 # true
-            shift
+        --db)
+            cfg_db=$2
+            shift 2
             ;;
         --dry-run)
             cfg_dry_run=1 # true
             shift
+            ;;
+        --info)
+            cfg_info=1 # true
+            shift
+            ;;
+        --output)
+            cfg_db_new=$2
+            shift 2
             ;;
         *)
             args+=("$1")
@@ -37,18 +53,14 @@ while (($# > 0)); do
     esac
 done
 
-current_db="data/jetstream.sqlite3"
-new_db="data/new.sqlite3"
-date_prefix=${args[0]:-$(prefix_today)}
-
 # Print information about counts of matching or excluded posts.
 read -r -d '' query_info <<-SQL || true
-    attach 'file:${current_db}?mode=ro' as js;
+    attach 'file:${cfg_db}?mode=ro' as js;
 
     -- information
     with posts_past as (
         select * from js.posts
-        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime('$date_prefix')
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime('$cfg_date_prefix')
     ),
     posts_future as (
         select * from js.posts
@@ -56,7 +68,7 @@ read -r -d '' query_info <<-SQL || true
     ),
     posts_current as (
         select * from js.posts
-        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$date_prefix')
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$cfg_date_prefix')
             and datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime()
     )
     select 'posts' as key, count(*) as stat from js.posts
@@ -72,20 +84,20 @@ SQL
 
 # Build a new database containing all parsed timestamps within the current day prefix
 read -r -d '' query_build <<-SQL || true
-    attach 'file:${current_db}?mode=ro' as js;
+    attach 'file:${cfg_db}?mode=ro' as js;
 
     -- build data and detach
     -- exclude future posts and posts before start of day prefix
     create table posts (cid TEXT UNIQUE, did TEXT, feedpost TEXT);
     insert or ignore into posts
         select cid, did, feedpost from js.posts
-        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$date_prefix')
+        where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$cfg_date_prefix')
             and datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime();
 
     detach js;
 SQL
 
-printf "date_prefix: %s\n" "$date_prefix"
+printf "date_prefix: %s\n" "$cfg_date_prefix"
 printf "query: %s\n" "$query_build"
 
 # quit after showing prefix and query values
@@ -101,14 +113,14 @@ if ((cfg_info)); then
 fi
 
 # remove the new database path if it exists
-if [[ -f "$new_db" ]]; then
-    printf "removing existing database [%s] ... " "$new_db"
-    if rm "$new_db"; then
+if [[ -f "$cfg_db_new" ]]; then
+    printf "removing existing database [%s] ... " "$cfg_db_new"
+    if rm "$cfg_db_new"; then
         printf "ok\n"
     fi
 fi
 
 printf "building new database ... "
-if sqlite3 "$new_db" < <(printf "%s\n" "$query_build"); then
+if sqlite3 "$cfg_db_new" < <(printf "%s\n" "$query_build"); then
     printf "ok\n"
 fi
