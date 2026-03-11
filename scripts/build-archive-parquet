@@ -15,7 +15,8 @@ cfg_script_name="$(basename "$0")"
 usage() {
     printf "Extract jetstream data from SQLite databases to Parquet via DuckDB\n\n"
     printf "%s <db1.sqlite3> [db2.sqlite3]...\n" "$cfg_script_name"
-    printf "  --prefix <timestamp_prefix>  Specify prefix [%s]\n" "$cfg_prefix"
+    printf "  --prefix     <timestamp_prefix>  Specify prefix [default: %s]\n" "$cfg_prefix"
+    printf "  --output-dir <dir>               Archive output directory [default: %s]\n" "$cfg_output_dir"
     exit 1
 }
 
@@ -23,6 +24,10 @@ while (($# > 0)); do
     case $1 in
         --help|-h)
             usage
+            ;;
+        --output-dir)
+            cfg_output_dir=$2
+            shift 2
             ;;
         --prefix)
             cfg_prefix=$2
