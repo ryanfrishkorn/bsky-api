@@ -68,11 +68,11 @@ done
 # export parquet data for given prefix
 read -r -d '' query_export <<-SQL || true
     -- This exports with schema to a directory structure.
-    -- export database '${cfg_output_dir}/sync.parquet' (format parquet, compression zstd);
+    -- export database '${cfg_output_dir}/recent.parquet' (format parquet, compression zstd);
 
     -- This exports to a single file which can be attached by:
     -- create view post as select * from 'jetstream-YYYY-MM-DD.parquet';
-    copy (select * from posts) to '${cfg_output_dir}/sync.parquet' (format parquet);
+    copy (select * from posts) to '${cfg_output_dir}/recent.parquet' (format parquet);
 SQL
 
 query_base="$(printf "%s\n%s" "$query_base" "$query_export")"

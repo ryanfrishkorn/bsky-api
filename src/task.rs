@@ -30,7 +30,7 @@ impl Task {
                 cmd: "./bin/bsky-insight".to_string(),
                 args: [
                     "--db",
-                    "data/insight.duckdb",
+                    "data/recent.parquet",
                     "--lowercase",
                     "--limit",
                     "500",

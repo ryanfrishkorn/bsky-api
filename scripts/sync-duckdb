@@ -25,8 +25,8 @@ sync_parquet_build() {
     "${cmd_rsync[@]}" && "${cmd_build[@]}"
 }
 
-src="mini:/Users/alphalux/bluerift/bsky-api/data/sync.parquet"
-dst="data/sync.parquet"
+src="mini:/Users/alphalux/bluerift/bsky-api/data/recent.parquet"
+dst="data/recent.parquet"
 
 printf "%s starting sync\n" "$(TZ=UTC date)"
 sync_parquet_build "$src" "$dst"
