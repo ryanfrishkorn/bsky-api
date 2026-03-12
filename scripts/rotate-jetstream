@@ -9,6 +9,7 @@ usage() {
     printf "  --dry-run                 Display query info and exit\n"
     printf "  --info                    Show posts information (no rotation)\n"
     printf "  --output  <file.sqlite3>  Output database name [default: %s]\n" "$cfg_db_new"
+    printf "  --prefix  <YYYY-MM-DD>    Date prefix to preserve from [default: %s]\n" "$cfg_date_prefix"
     exit 1
 }
 
@@ -44,6 +45,10 @@ while (($# > 0)); do
             ;;
         --output)
             cfg_db_new=$2
+            shift 2
+            ;;
+        --prefix)
+            cfg_date_prefix=$2
             shift 2
             ;;
         *)
