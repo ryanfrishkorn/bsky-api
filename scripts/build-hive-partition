@@ -1,19 +1,35 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
+
+# script variables
+declare -a args
+cfg_hive_path='data/partitioned'
+cfg_script_name="$(basename "$0")"
+
+usage() {
+    printf "usage: %s <file.parquet>...\n" "$cfg_script_name"
+    printf "  --output <dir>  Hive output directory [default: %s]\n" "$cfg_hive_path"
+    exit 1
+}
+
+# Read a single parquet file and write partition based on timestamp field
 partition_parquet() {
     local db_file; db_file=$1
+    local hive_path; hive_path=$2
     local query
 
     declare -a cmd
 
-    read -r -d '' query <<-SQL
+    read -r -d '' query <<-SQL || true
         set timezone = 'UTC';
         copy (
             select *,
             cast(json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as DATE) as day
             from read_parquet('$db_file') 
         )
-        to 'data/partitioned' (
+        to '$hive_path' (
             FORMAT PARQUET,
             PARTITION_BY (day),
             OVERWRITE_OR_IGNORE true,
@@ -27,11 +43,16 @@ SQL
     "${cmd[@]}" < <(printf "%s" "$query")
 }
 
-declare -a args
-
-# gather arguments
+# parse all options and collect arguments
 while (($# > 0)); do
     case $1 in
+        --help)
+            usage
+            ;;
+        --output)
+            cfg_hive_path=$2
+            shift 2
+            ;;
         *)
             args+=("$1")
             shift
@@ -39,7 +60,8 @@ while (($# > 0)); do
     esac
 done
 
+# process all parquet file arguments
 for db in "${args[@]}"; do
     printf "%s\n" "$db"
-    partition_parquet "$db"
+    partition_parquet "$db" "$cfg_hive_path"
 done
