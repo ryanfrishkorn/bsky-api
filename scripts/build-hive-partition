@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+partition_parquet() {
+    local db_file; db_file=$1
+    local query
+
+    declare -a cmd
+
+    read -r -d '' query <<-SQL
+        set timezone = 'UTC';
+        copy (
+            select *,
+            cast(json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as DATE) as day
+            from read_parquet('$db_file') 
+        )
+        to 'data/partitioned' (
+            FORMAT PARQUET,
+            PARTITION_BY (day),
+            OVERWRITE_OR_IGNORE true,
+            COMPRESSION ZSTD
+        );
+SQL
+    printf "%s\n" "$query"
+
+    # execute query
+    cmd=(duckdb)
+    "${cmd[@]}" < <(printf "%s" "$query")
+}
+
+declare -a args
+
+# gather arguments
+while (($# > 0)); do
+    case $1 in
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+for db in "${args[@]}"; do
+    printf "%s\n" "$db"
+    partition_parquet "$db"
+done
