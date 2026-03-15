@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+cfg_prefix=$(TZ=UTC date -I)
+cfg_script_name="$(basename "$0")"
+
+# help info
+usage() {
+    printf "usage: %s\n" "$cfg_script_name"
+    printf "  --prefix <YYYY-MM-DD>  Build associated date prefix [default: %s]\n" "${cfg_prefix}"
+    exit 1
+}
+
+# build from provided date prefix
+build-duckdb() {
+    local prefix; prefix=$1
+    local cmd
+
+    cmd=(bsky-insight build)
+    cmd+=(--db "data/archive/jetstream-${prefix}.parquet")
+    cmd+=(--db-duck "data/analytics/${prefix}.duckdb")
+    cmd+=(--start "${prefix}T00:00:00Z")
+    cmd+=(--fts)
+
+    printf "%s\n" "${cmd[*]}"
+    "${cmd[@]}"
+}
+
+# parse options
+while (($# > 0)); do
+    case $1 in
+        --help)
+            usage
+            ;;
+        --prefix)
+            cfg_prefix=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+build-duckdb "$cfg_prefix"

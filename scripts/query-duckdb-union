@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+# Variables
+declare -a args
+declare -a cmd
+declare -a query_full
+cfg_script_name="$(basename "$0")"
+cfg_term=""
+
+# help information
+usage() {
+    printf "usage: %s <search_term>\n" "$cfg_script_name"
+    exit 1
+}
+
+# attach all files
+query_attach_files() {
+    local query
+    
+    for i in "${!duckdb_files[@]}"; do
+        read -r -d '' query <<-SQL || true
+            attach '${duckdb_files[i]}' as db_$((i));
+SQL
+        printf "%s\n" "$query"
+    done
+}
+
+# detach all files
+query_detach_files() {
+    local query
+
+    for i in "${!duckdb_files[@]}"; do
+        read -r -d '' query <<-SQL
+            detach '${duckdb_files[i]}';
+SQL
+        printf "%s\n" "$query"
+    done
+}
+
+build_union_statement() {
+    local query
+
+    for i in "${!duckdb_files[@]}"; do
+        # union all for all but first entry
+        if ((i > 0)); then
+            printf "union all\n"
+        fi
+
+        read -r -d '' query <<-SQL || true
+            select * from db_$((i)).posts
+SQL
+        printf "%s\n" "$query"
+    done
+}
+
+build_main_query() {
+    local term ; term=$1
+    local query
+
+    read -r -d '' query <<-SQL || true
+        with combined as (
+            $(build_union_statement)
+        )
+        select substr(replace(created_at::VARCHAR, ' ', 'T'), 0, 20) as ts, text from combined where regexp_matches(text, '\b${term}\b', 'i')
+        order by created_at desc
+        limit 10000
+SQL
+    printf "%s\n" "$query"
+}
+
+# parse options
+while (($# > 0)); do
+    case $1 in
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# capture search term from arguments
+cfg_term="${args[0]}"
+if [[ $cfg_term == '' ]]; then
+    usage
+fi
+
+# collect database files
+mapfile -t duckdb_files < <(ls data/analytics/*.duckdb)
+
+# build complete query
+mapfile -t query_attach < <(query_attach_files)
+mapfile -t query_main < <(build_main_query "$cfg_term")
+mapfile -t query_detach < <(query_detach_files)
+
+query_full+=("${query_attach[@]}")
+query_full+=("${query_main[@]}")
+query_full+=("${query_detach[@]}")
+
+# for line in "${query_full[@]}"; do
+#     printf "%s\n" "$line"
+# done
+
+cmd=(duckdb -json)
+"${cmd[@]}" < <(printf "%s" "${query_full[*]}") | jq -c '.[]'
