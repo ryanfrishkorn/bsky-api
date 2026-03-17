@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -euo pipefail
 
 # Variables
 declare -a args
 declare -a cmd
 declare -a query_full
 cfg_script_name="$(basename "$0")"
+cfg_show_did=0 # false
+cfg_order="desc"
 cfg_term=""
 
 # help information
 usage() {
     printf "usage: %s <search_term>\n" "$cfg_script_name"
+    printf "  --did               display DID field\n"
+    printf "  --help              display help info\n"
+    printf "  --order <asc|desc>  time sort direction [default: %s]\n" "$cfg_order"
     exit 1
 }
 
@@ -39,6 +44,18 @@ SQL
     done
 }
 
+# determined by command line flags
+build_additional_fields() {
+    if ((cfg_show_did)); then
+        printf "did,\n"
+    fi
+}
+
+build_order_clause() {
+    printf "order by created_at %s\n" "$cfg_order"
+}
+
+# iterate through database files to generate union query
 build_union_statement() {
     local query
 
@@ -63,8 +80,12 @@ build_main_query() {
         with combined as (
             $(build_union_statement)
         )
-        select substr(replace(created_at::VARCHAR, ' ', 'T'), 0, 20) as ts, text from combined where regexp_matches(text, '\b${term}\b', 'i')
-        order by created_at desc
+        select
+            substr(replace(created_at::VARCHAR, ' ', 'T'), 0, 20) as ts,
+            $(build_additional_fields)
+            text
+        from combined where regexp_matches(text, '\b${term}\b', 'i')
+        $(build_order_clause)
         limit 10000
 SQL
     printf "%s\n" "$query"
@@ -73,6 +94,17 @@ SQL
 # parse options
 while (($# > 0)); do
     case $1 in
+        --did)
+            cfg_show_did=1 # true
+            shift
+            ;;
+        --help)
+            usage
+            ;;
+        --order)
+            cfg_order=$2
+            shift 2
+            ;;
         *)
             args+=("$1")
             shift
