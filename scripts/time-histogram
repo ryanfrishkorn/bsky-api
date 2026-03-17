@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+# Produce a post count hourly histogram where count exceeds a threshold
+# in order to check for missing or stale jetstream data.
+
+# set -x
+set -euo pipefail
+
+declare -a cmd
+declare -a args
+cfg_db="data/jetstream.sqlite3"
+cfg_script_name="$(basename "$0")"
+cfg_min_matches=100
+
+usage() {
+    printf "Create a time histogram for sqlite and parquet files\n\n"
+    printf "usage: %s\n" "$cfg_script_name"
+    printf "  --db  <file.db>  Specify source database [default: %s]\n" "$cfg_db"
+    printf "  --min <num>      Minimum match threshold to determine output [default: %s]\n" "$cfg_min_matches"
+    exit 1
+}
+
+while (($# > 0)); do
+    case $1 in
+        --db)
+            cfg_db=$2
+            shift 2
+            ;;
+        --help)
+            usage
+            ;;
+        --min)
+            cfg_min_matches=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+build_attach_query() {
+    local query
+    
+    case $cfg_db in
+        *.sqlite|*.sqlite3)
+            read -r -d '' query <<-SQL || true
+                -- source SQLite
+                attach '$cfg_db' as js (read_only);
+                create view posts as select * from js.posts;
+SQL
+            ;;
+        *.parquet)
+            read -r -d '' query <<-SQL || true
+                -- source Parquet
+                create view posts as select * from '$cfg_db';
+SQL
+            ;;
+        *)
+            printf "cannot attach database format\n" 1>&2
+            return 1
+            ;;
+    esac
+
+    printf "%s\n" "$query"
+}
+
+build_detach_query() {
+    local query
+
+    case $cfg_db in
+        *.sqlite|*.sqlite3)
+            read -r -d '' query <<-SQL || true
+                drop view posts;
+                detach js;
+SQL
+            ;;
+        *.parquet)
+            read -r -d '' query <<-SQL || true
+                drop view posts;
+SQL
+            ;;
+        *)
+            printf "cannot detach database format\n" 1>&2
+            return 1
+            ;;
+    esac
+
+    printf "%s\n" "$query"
+}
+
+build_full_query() {
+    local query
+
+    read -r -d '' query <<-SQL || true
+        $attach_query
+        
+        with parsed as (
+            select json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at from posts
+        ),
+        time_window as (
+            select * from parsed
+        )
+        select substr(created_at::VARCHAR, 0, 14) ts, count(*) count
+            from time_window
+            group by ts having count >= $cfg_min_matches
+            order by ts asc;
+    
+        $detach_query
+SQL
+
+    printf "%s\n" "$query"
+}
+
+# build into array
+attach_query="$(build_attach_query)"
+detach_query="$(build_detach_query)"
+mapfile -t full_query < <(build_full_query)
+
+cmd+=(duckdb -box)
+"${cmd[@]}" < <(printf "%s\n" "${full_query[@]}")

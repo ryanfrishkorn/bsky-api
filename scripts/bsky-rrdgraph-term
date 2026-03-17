@@ -184,7 +184,7 @@ rrd_output_image="$(generate_output_name "$output_dir" "$term" "$period").png"
 rrd_create "$rrd_output_db" "$period"
 
 # invoke `time_series` script in the same directory
-cmd_time_series+=("$script_dir/time_series")
+cmd_time_series+=("$script_dir/time-series")
 cmd_time_series+=(--db "$db")
 cmd_time_series+=(--interval "$interval")
 cmd_time_series+=(--period "$period")
