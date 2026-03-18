@@ -98,6 +98,10 @@ read -r -d '' query_build <<-SQL || true
         select cid, did, feedpost from js.posts
         where datetime(json_extract(feedpost, '$.createdAt'), 'utc') >= datetime('$cfg_date_prefix')
             and datetime(json_extract(feedpost, '$.createdAt'), 'utc') < datetime();
+    -- copy cursor data for jetclient accurate resume
+    create table cursor (id INTEGER PRIMARY KEY CHECK(id = 1), time_us INTEGER NOT NULL);
+    insert into cursor
+        select * from js.cursor;
 
     detach js;
 SQL
