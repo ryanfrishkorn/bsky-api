@@ -7,6 +7,7 @@ declare -a args
 declare -a cmd
 declare -a query_full
 cfg_script_name="$(basename "$0")"
+cfg_limit=10000
 cfg_show_did=0 # false
 cfg_order="desc"
 cfg_term=""
@@ -16,6 +17,7 @@ usage() {
     printf "usage: %s <search_term>\n" "$cfg_script_name"
     printf "  --did               display DID field\n"
     printf "  --help              display help info\n"
+    printf "  --limit <num>       result limit for search query\n [default: %s]" "$cfg_limit"
     printf "  --order <asc|desc>  time sort direction [default: %s]\n" "$cfg_order"
     exit 1
 }
@@ -47,7 +49,7 @@ SQL
 # determined by command line flags
 build_additional_fields() {
     if ((cfg_show_did)); then
-        printf "did,\n"
+        printf "substr(did, 9) as did,\n"
     fi
 }
 
@@ -86,7 +88,7 @@ build_main_query() {
             text
         from combined where regexp_matches(text, '\b${term}\b', 'i')
         $(build_order_clause)
-        limit 10000
+        limit $cfg_limit
 SQL
     printf "%s\n" "$query"
 }
@@ -100,6 +102,10 @@ while (($# > 0)); do
             ;;
         --help)
             usage
+            ;;
+        --limit)
+            cfg_limit=$2
+            shift 2
             ;;
         --order)
             cfg_order=$2
