@@ -2,10 +2,12 @@
 
 set -euo pipefail
 
-# Variables
+# Arrays
 declare -a args
 declare -a cmd
 declare -a query_full
+
+# Variables
 cfg_script_name="$(basename "$0")"
 cfg_limit=10000
 cfg_show_did=0 # false
@@ -128,6 +130,10 @@ fi
 mapfile -t duckdb_files < <(ls data/analytics/*.duckdb)
 
 # build complete query
+#
+# Note: Function calls within the heredoc are invoked in a subshell
+# which prevents the setting of any global script variables. This
+# is why the query is built in several steps.
 mapfile -t query_attach < <(query_attach_files)
 mapfile -t query_main < <(build_main_query "$cfg_term")
 mapfile -t query_detach < <(query_detach_files)
