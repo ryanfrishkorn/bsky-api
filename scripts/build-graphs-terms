@@ -11,6 +11,7 @@ period='7 days'
 set -euo pipefail
 
 check_prelims() {
+    mkdir -p "$output_dir"
     if ! [[ -d "$output_dir" ]]; then
         printf "output_dir not present: %s\n" "$output_dir"
         return 1
