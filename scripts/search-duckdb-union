@@ -16,7 +16,7 @@ cfg_term=""
 
 # help information
 usage() {
-    printf "usage: %s <search_term>\n" "$cfg_script_name"
+    printf "usage: %s [options] <search_term>\n" "$cfg_script_name"
     printf "  --did               display DID field\n"
     printf "  --help              display help info\n"
     printf "  --limit <num>       result limit for search query [default: %s]\n" "$cfg_limit"
