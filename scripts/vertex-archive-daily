@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+declare -a args
+
+cfg_archive_dir="data/archive/daily"
+cfg_data_dir="data"
+cfg_script_name="$(basename "$0")"
+
+usage() {
+    printf "Compress and archive additional non-current databases.\n\n"
+    printf "usage: %s\n" "$cfg_script_name"
+    printf "  --archive <dir>  Specify archive directory\n"
+    printf "  --data    <dir>  Specify data directory\n"
+    exit 1
+}
+
+safe_run_vertex_only() {
+    if [[ "$HOSTNAME" != "vertex" ]]; then
+        printf "WARNING: This script was written for vertex.bluerift with a scripted daily file scheme. Continue? "
+        read -r response
+
+        if [[ "$response" =~ y ]]; then
+            return 0
+        else
+            exit 1
+        fi
+    fi
+}
+
+truncate_wal() {
+    declare -a cmd
+    local db; db=$1
+    local query
+
+    cmd=(sqlite3)
+    cmd+=("$db")
+    query="pragma wal_checkpoint(truncate);"
+
+    "${cmd[@]}" < <(printf "%s\n" "$query") > /dev/null
+}
+
+# opts and help
+while (($# > 0)); do
+    case $1 in
+        --help)
+            usage
+            ;;
+        --archive)
+            cfg_archive_dir=$2
+            shift 2
+            ;;
+        --data)
+            cfg_data_dir=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+safe_run_vertex_only
+
+mapfile -t databases < <(ls "${cfg_data_dir}"/jetstream-????-??-??.sqlite3)
+printf "count: %s\n" "${#databases[@]}"
+
+# check number of databases in directory
+if [[ ${#databases[@]} -le 1 ]]; then
+    # no excess databases
+    exit 0
+fi
+
+# archive first array element
+db="${databases[0]}"
+printf "archiving: %s\n" "$db"
+
+printf "  truncating ... "
+if truncate_wal "$db"; then
+    printf "ok\n"
+fi
+
+# compress
+printf "  compressing ... "
+if nice gzip "$db"; then
+    printf "ok\n"
+fi
+
+# relocate to archive directory
+printf "  moving to %s ... " "$cfg_archive_dir"
+
+mkdir -p "${cfg_archive_dir}"
+# note: appends .gz extension to file name
+if mv "${db}.gz" "${cfg_archive_dir}"; then
+    printf "ok\n"
+fi
