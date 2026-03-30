@@ -58,6 +58,22 @@ while (($# > 0)); do
     esac
 done
 
+truncate_wal() {
+    declare -a cmd
+
+    local query
+    local db; db=$1
+
+    read -r -d '' query <<-SQL
+        pragma wal_checkpoint(truncate);
+SQL
+
+    cmd=(sqlite3)
+    cmd+=("$db")
+
+    "${cmd[@]}" < <(printf "%s" "$query")
+}
+
 # Print information about counts of matching or excluded posts.
 read -r -d '' query_info <<-SQL || true
     attach 'file:${cfg_db}?mode=ro' as js;
@@ -131,5 +147,10 @@ fi
 
 printf "building new database ... "
 if sqlite3 "$cfg_db_new" < <(printf "%s\n" "$query_build"); then
+    printf "ok\n"
+fi
+
+printf "truncating wal [%s] ... " "$cfg_db"
+if truncate_wal "$cfg_db"; then
     printf "ok\n"
 fi

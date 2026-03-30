@@ -65,7 +65,6 @@ done
 safe_run_vertex_only
 
 mapfile -t databases < <(ls "${cfg_data_dir}"/jetstream-????-??-??.sqlite3)
-printf "count: %s\n" "${#databases[@]}"
 
 # check number of databases in directory
 if [[ ${#databases[@]} -le 1 ]]; then
