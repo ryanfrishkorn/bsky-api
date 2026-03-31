@@ -8,7 +8,7 @@ declare -a args
 declare -a cmd
 declare -a databases
 
-cfg_recent_interval="2 hours"
+cfg_recent_interval="80 minutes"
 cfg_output_dir="data"
 cfg_script_name="$(basename "$0")"
 
