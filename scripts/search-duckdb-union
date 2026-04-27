@@ -9,6 +9,7 @@ declare -a query_full
 
 # Variables
 cfg_script_name="$(basename "$0")"
+cfg_did=""
 cfg_limit=10000
 cfg_show_did=0 # false
 cfg_order="desc"
@@ -17,10 +18,10 @@ cfg_term=""
 # help information
 usage() {
     printf "usage: %s [options] <search_term>\n" "$cfg_script_name"
-    printf "  --did               display DID field\n"
     printf "  --help              display help info\n"
     printf "  --limit <num>       result limit for search query [default: %s]\n" "$cfg_limit"
     printf "  --order <asc|desc>  time sort direction [default: %s]\n" "$cfg_order"
+    printf "  --show-did          display DID field\n"
     exit 1
 }
 
@@ -59,6 +60,12 @@ build_order_clause() {
     printf "order by created_at %s\n" "$cfg_order"
 }
 
+did_where_clause() {
+    if [[ -n $cfg_did ]]; then
+        printf "and did = 'did:plc:%s'\n" "$cfg_did"
+    fi
+}
+
 # iterate through database files to generate union query
 build_union_statement() {
     local query
@@ -89,6 +96,7 @@ build_main_query() {
             $(build_additional_fields)
             text
         from combined where regexp_matches(text, '\b${term}\b', 'i')
+        $(did_where_clause)
         $(build_order_clause)
         limit $cfg_limit
 SQL
@@ -98,12 +106,12 @@ SQL
 # parse options
 while (($# > 0)); do
     case $1 in
-        --did)
-            cfg_show_did=1 # true
-            shift
-            ;;
         --help)
             usage
+            ;;
+        --did)
+            cfg_did=$2
+            shift 2
             ;;
         --limit)
             cfg_limit=$2
@@ -112,6 +120,10 @@ while (($# > 0)); do
         --order)
             cfg_order=$2
             shift 2
+            ;;
+        --show-did)
+            cfg_show_did=1 # true
+            shift
             ;;
         *)
             args+=("$1")
