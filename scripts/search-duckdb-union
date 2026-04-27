@@ -11,6 +11,7 @@ declare -a query_full
 cfg_script_name="$(basename "$0")"
 cfg_did=""
 cfg_limit=10000
+cfg_show_cid=0 # false
 cfg_show_did=0 # false
 cfg_order="desc"
 cfg_term=""
@@ -21,6 +22,7 @@ usage() {
     printf "  --help              display help info\n"
     printf "  --limit <num>       result limit for search query [default: %s]\n" "$cfg_limit"
     printf "  --order <asc|desc>  time sort direction [default: %s]\n" "$cfg_order"
+    printf "  --show-cid          display CID field\n"
     printf "  --show-did          display DID field\n"
     exit 1
 }
@@ -31,7 +33,7 @@ query_attach_files() {
     
     for i in "${!duckdb_files[@]}"; do
         read -r -d '' query <<-SQL || true
-            attach '${duckdb_files[i]}' as db_$((i));
+            create view db_$((i)) as select * from '${duckdb_files[i]}';
 SQL
         printf "%s\n" "$query"
     done
@@ -53,6 +55,10 @@ SQL
 build_additional_fields() {
     if ((cfg_show_did)); then
         printf "substr(did, 9) as did,\n"
+    fi
+
+    if ((cfg_show_cid)); then
+        printf "cid,\n"
     fi
 }
 
@@ -77,7 +83,7 @@ build_union_statement() {
         fi
 
         read -r -d '' query <<-SQL || true
-            select * from db_$((i)).posts
+            select json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ as created_at, cid, did, json_extract_string(feedpost, '$.text') as text from db_$((i))
 SQL
         printf "%s\n" "$query"
     done
@@ -121,6 +127,10 @@ while (($# > 0)); do
             cfg_order=$2
             shift 2
             ;;
+        --show-cid)
+            cfg_show_cid=1 # true
+            shift
+            ;;
         --show-did)
             cfg_show_did=1 # true
             shift
@@ -139,7 +149,8 @@ if [[ $cfg_term == '' ]]; then
 fi
 
 # collect database files
-mapfile -t duckdb_files < <(ls data/analytics/*.duckdb)
+# mapfile -t duckdb_files < <(ls data/analytics/*.duckdb)
+mapfile -t duckdb_files < <(ls data/archive/*.parquet)
 
 # build complete query
 #
@@ -148,7 +159,7 @@ mapfile -t duckdb_files < <(ls data/analytics/*.duckdb)
 # is why the query is built in several steps.
 mapfile -t query_attach < <(query_attach_files)
 mapfile -t query_main < <(build_main_query "$cfg_term")
-mapfile -t query_detach < <(query_detach_files)
+# TEMP mapfile -t query_detach < <(query_detach_files)
 
 query_full+=("${query_attach[@]}")
 query_full+=("${query_main[@]}")
@@ -157,6 +168,9 @@ query_full+=("${query_detach[@]}")
 # for line in "${query_full[@]}"; do
 #     printf "%s\n" "$line"
 # done
+
+# cmd=(duckdb -list)
+# "${cmd[@]}" < <(printf "%s" "${query_full[*]}")
 
 cmd=(duckdb -json)
 "${cmd[@]}" < <(printf "%s" "${query_full[*]}") | jq -c '.[]'
