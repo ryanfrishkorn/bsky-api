@@ -19,7 +19,7 @@ build-duckdb() {
     cmd+=(--db "data/archive/jetstream-${prefix}.parquet")
     cmd+=(--db-duck "data/analytics/${prefix}.duckdb")
     cmd+=(--start "${prefix}T00:00:00Z")
-    cmd+=(--fts)
+    # cmd+=(--fts)
 
     printf "%s\n" "${cmd[*]}"
     "${cmd[@]}"
