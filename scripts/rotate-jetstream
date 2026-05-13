@@ -17,6 +17,28 @@ prefix_today() {
     TZ=UTC date -I
 }
 
+prefix_yesterday() {
+    local unix_today
+    local unix_yesterday
+    local prefix
+
+    unix_today=$(TZ=UTC date +%s)
+    unix_yesterday=$(printf "%s - 86400" "$unix_today" | bc)
+
+    if date --version >/dev/null 2>&1; then
+        # GNU
+        prefix="$(date -d "@$unix_yesterday" +%Y-%m-%d)"
+    else
+        # BSD
+        prefix="$(date -r "$unix_yesterday" +%Y-%m-%d)"
+    fi
+
+    # printf "unix_today    : %s\n" "$unix_today"
+    # printf "unix_yesterday: %s\n" "$unix_yesterday"
+    # printf "prefix_yesterday: %s\n" "$prefix"
+    printf "%s\n" "$prefix"
+}
+
 # variables
 declare -a args
 cfg_script_name=$(basename "$0")
@@ -25,6 +47,7 @@ cfg_info=0 # false
 cfg_db="data/jetstream.sqlite3"
 cfg_db_new="data/new.sqlite3"
 cfg_date_prefix=$(prefix_today)
+cfg_trash_dir="${HOME}/tmp"
 
 while (($# > 0)); do
     case $1 in
@@ -137,6 +160,12 @@ if ((cfg_info)); then
     exit 0
 fi
 
+# build previous day archive
+printf "archiving [%s] ... " "$(prefix_yesterday)"
+if ./scripts/build-archive-parquet --prefix "$(prefix_yesterday)" data/jetstream.sqlite3 > /dev/null ; then
+    printf "ok\n"
+fi
+
 # remove the new database path if it exists
 if [[ -f "$cfg_db_new" ]]; then
     printf "removing existing database [%s] ... " "$cfg_db_new"
@@ -152,5 +181,15 @@ fi
 
 printf "truncating wal [%s] ... " "$cfg_db"
 if truncate_wal "$cfg_db"; then
+    printf "ok\n"
+fi
+
+printf "moving old database [%s] ... " "$cfg_trash_dir"
+if mv "$cfg_db" ~/tmp/; then
+    printf "ok\n"
+fi
+
+printf "renaming fresh database [%s] -> [%s] ... " "$cfg_db_new" "$cfg_db"
+if mv "$cfg_db_new" "$cfg_db"; then
     printf "ok\n"
 fi
