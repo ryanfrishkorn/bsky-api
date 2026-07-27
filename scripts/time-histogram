@@ -96,8 +96,12 @@ build_full_query() {
     read -r -d '' query <<-SQL || true
         $attach_query
         
-        with parsed as (
-            select json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at from posts
+        with filtered as (
+            -- check for malformed date strings (notably month field)
+            select *, substring(json_extract_string(feedpost, '$.createdAt'), 6, 2)::INTEGER as month from posts where month <= 12
+        ),
+        parsed as (
+            select json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at from filtered
         ),
         time_window as (
             select * from parsed
