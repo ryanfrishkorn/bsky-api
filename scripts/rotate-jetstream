@@ -23,7 +23,7 @@ prefix_yesterday() {
     local prefix
 
     unix_today=$(TZ=UTC date +%s)
-    unix_yesterday=$(printf "%s - 86400" "$unix_today" | bc)
+    unix_yesterday=$(printf "%s - 86400\n" "$unix_today" | bc)
 
     if date --version >/dev/null 2>&1; then
         # GNU
