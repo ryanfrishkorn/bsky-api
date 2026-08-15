@@ -97,8 +97,8 @@ build_full_query() {
         $attach_query
         
         with filtered as (
-            -- check for malformed date strings (notably month field)
-            select *, substring(json_extract_string(feedpost, '$.createdAt'), 6, 2)::INTEGER as month from posts where month <= 12
+            -- exclude did:web posts because they are littered with malformed timestamps and spam
+            select * from posts where did not like 'did:web:%'
         ),
         parsed as (
             select json_extract_string(feedpost, '$.createdAt')::TIMESTAMPTZ at time zone 'UTC' as created_at from filtered
