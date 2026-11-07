@@ -31,7 +31,7 @@ query_attach_files() {
     
     for i in "${!duckdb_files[@]}"; do
         read -r -d '' query <<-SQL || true
-            attach '${duckdb_files[i]}' as db_$((i));
+            attach '${duckdb_files[i]}' as db_$((i)) (READ_ONLY);
 SQL
         printf "%s\n" "$query"
     done
