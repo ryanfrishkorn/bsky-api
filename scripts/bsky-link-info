@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+
+# Produce a post count hourly histogram where count exceeds a threshold
+# in order to check for missing or stale jetstream data.
+
+# set -x
+set -euo pipefail
+
+declare -a cmd
+declare -a args
+cfg_db="${HOME}/bluerift/bsky-api/data/recent.parquet"
+cfg_limit=""
+cfg_link=""
+cfg_script_name="$(basename "$0")"
+
+limit_clause=""
+
+usage() {
+    printf "Create a time histogram for sqlite and parquet files\n\n"
+    printf "usage: %s\n" "$cfg_script_name"
+    printf "  --db    <file.db>  Specify source database [default: %s]\n" "$cfg_db"
+    printf "  --limit <n>        Limit results [default: %s]\n" "$cfg_limit"
+    exit 1
+}
+
+while (($# > 0)); do
+    case $1 in
+        --help)
+            usage
+            ;;
+        --db)
+            cfg_db=$2
+            shift 2
+            ;;
+        --limit)
+            cfg_limit=$2
+            shift 2
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+cfg_link=${args[0]}
+
+if [[ -n "$cfg_limit" ]]; then
+    limit_clause="limit ${cfg_limit}";
+fi
+
+build_attach_query() {
+    local query
+    
+    case $cfg_db in
+        *.sqlite|*.sqlite3)
+            read -r -d '' query <<-SQL || true
+                -- source SQLite
+                attach '$cfg_db' as js (read_only);
+                create view posts as select * from js.posts;
+SQL
+            ;;
+        *.parquet)
+            read -r -d '' query <<-SQL || true
+                -- source Parquet
+                create view posts as select * from '$cfg_db';
+SQL
+            ;;
+        *)
+            printf "cannot attach database format\n" 1>&2
+            return 1
+            ;;
+    esac
+
+    printf "%s\n" "$query"
+}
+
+build_detach_query() {
+    local query
+
+    case $cfg_db in
+        *.sqlite|*.sqlite3)
+            read -r -d '' query <<-SQL || true
+                drop view posts;
+                detach js;
+SQL
+            ;;
+        *.parquet)
+            read -r -d '' query <<-SQL || true
+                drop view posts;
+SQL
+            ;;
+        *)
+            printf "cannot detach database format\n" 1>&2
+            return 1
+            ;;
+    esac
+
+    printf "%s\n" "$query"
+}
+
+build_full_query() {
+    local query
+
+    read -r -d '' query <<-SQL || true
+        $attach_query
+
+        select
+            substring(json_extract_string(feedpost, '$.createdAt')::TIMESTAMP::VARCHAR, 0, 17) as ts,
+            substring(did, 8) as did,
+            json_extract_string(feedpost, '$.text') as text
+            from posts
+            where json_extract_string(feedpost, '$.embed.external.uri') like '%${cfg_link}%'
+            and text != ''
+            order by ts asc
+            ${limit_clause};
+    
+        $detach_query
+SQL
+
+    printf "%s\n" "$query"
+}
+
+# build into array
+attach_query="$(build_attach_query)"
+detach_query="$(build_detach_query)"
+mapfile -t full_query < <(build_full_query)
+
+cmd+=(duckdb -json)
+"${cmd[@]}" < <(printf "%s\n" "${full_query[@]}") | jq -c '.[]'
