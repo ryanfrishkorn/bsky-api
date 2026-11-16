@@ -19,6 +19,7 @@ cfg_term=""
 usage() {
     printf "usage: %s [options] <search_term>\n" "$cfg_script_name"
     printf "  --help              display help info\n"
+    printf "  --did   <DID>       restrict to specified DID\n"
     printf "  --limit <num>       result limit for search query [default: %s]\n" "$cfg_limit"
     printf "  --order <asc|desc>  time sort direction [default: %s]\n" "$cfg_order"
     printf "  --show-did          display DID field\n"
