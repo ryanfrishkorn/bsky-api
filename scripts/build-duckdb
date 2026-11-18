@@ -44,6 +44,7 @@ build_from_sqlite() {
     data_source=$2
 
     cmd=(duckdb)
+    cmd+=(-init /dev/null)
 
     read -r -d '' build_query <<-SQL || true
         -- import database '$data_source';

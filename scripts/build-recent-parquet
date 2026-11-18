@@ -82,6 +82,6 @@ query_base="$(printf "%s\n%s" "$query_base" "$query_export")"
 printf "%s\n" "$query_base"
 
 printf "%s building parquet\n" "$(date)"
-cmd=(duckdb)
+cmd=(duckdb -init /dev/null)
 "${cmd[@]}" < <(printf "%s" "$query_base")
 printf "%s build complete\n" "$(date)"
