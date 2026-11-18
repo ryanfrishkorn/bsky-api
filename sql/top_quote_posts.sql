@@ -10,7 +10,8 @@ with top_reposts as (
         group by record
         order by count desc
 ), present_posts as (
-    select cid,
+    select json_extract_string(feedpost, '$.createdAt')::TIMESTAMP as ts,
+        cid,
         did,
         json_extract_string(feedpost, '$.text') as text
         from posts
@@ -18,7 +19,8 @@ with top_reposts as (
 )
 -- select did, cid, text from present_posts limit 10;
 select t.count,
-    p.did,
+    substring(p.ts::VARCHAR, 0, 17) as ts,
+    substring(p.did, 9) as did,
     -- p.cid,
     p.text
     from present_posts as p
